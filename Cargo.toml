@@ -1,0 +1,12 @@
+[package]
+name = "jsbsim-ffi"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+
+
+[build-dependencies]
+cc = "1.1"
+pkg-config = "0.3"

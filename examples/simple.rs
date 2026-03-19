@@ -1,0 +1,30 @@
+use jsbsim_ffi::Sim;
+
+fn main() {
+    // CHANGE THIS to your actual JSBSim source root
+    let mut sim = Sim::new("/home/joni/jsbsim");
+
+    if !sim.load_script("scripts/c1723.xml") {
+        eprintln!("Failed to load script!");
+        return;
+    }
+
+    if !sim.run_ic() {
+        eprintln!("Failed to run initial conditions!");
+        return;
+    }
+
+    println!("✅ JSBSim running (Cessna 172)...");
+
+    for step in 0..2000 {
+        sim.run();
+
+        if step % 400 == 0 {
+            let t   = sim.get_property("simulation/sim-time-sec");
+            let alt = sim.get_property("position/h-agl-ft");
+            let ias = sim.get_property("velocities/vc-kts");
+
+            println!("t={:.1}s → Altitude: {:.0} ft | IAS: {:.1} kts", t, alt, ias);
+        }
+    }
+}
