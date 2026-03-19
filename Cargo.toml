@@ -3,6 +3,8 @@ name = "jsbsim-ffi"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/jonititan/jsbsim-ffi"
+description = "A wrapper around the C++ JSBSim library to allow its use in rust"
 
 [dependencies]
 
