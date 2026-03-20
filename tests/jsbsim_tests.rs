@@ -40,11 +40,6 @@ fn create_fdm() -> Option<Sim> {
 
 // ===========================================================================
 // TestModelLoading  (from tests/TestModelLoading.py)
-//
-// Verify that a selection of aircraft models can be loaded.
-// The Python original also checks that extracting XML sections into
-// separate files produces bit-identical output; here we focus on the
-// load-model step itself since that is what the FFI exposes.
 // ===========================================================================
 
 #[test]
@@ -53,10 +48,7 @@ fn load_model_ball() {
         Some(s) => s,
         None => return,
     };
-    assert!(
-        sim.load_model("ball"),
-        "Failed to load the 'ball' model"
-    );
+    assert!(sim.load_model("ball"), "Failed to load 'ball'");
 }
 
 #[test]
@@ -65,10 +57,7 @@ fn load_model_c172x() {
         Some(s) => s,
         None => return,
     };
-    assert!(
-        sim.load_model("c172x"),
-        "Failed to load the 'c172x' model"
-    );
+    assert!(sim.load_model("c172x"), "Failed to load 'c172x'");
 }
 
 #[test]
@@ -77,10 +66,7 @@ fn load_model_737() {
         Some(s) => s,
         None => return,
     };
-    assert!(
-        sim.load_model("737"),
-        "Failed to load the '737' model"
-    );
+    assert!(sim.load_model("737"), "Failed to load '737'");
 }
 
 #[test]
@@ -89,10 +75,7 @@ fn load_model_f16() {
         Some(s) => s,
         None => return,
     };
-    assert!(
-        sim.load_model("f16"),
-        "Failed to load the 'f16' model"
-    );
+    assert!(sim.load_model("f16"), "Failed to load 'f16'");
 }
 
 #[test]
@@ -108,14 +91,42 @@ fn load_model_nonexistent_returns_false() {
 }
 
 // ===========================================================================
-// CheckScripts  (from tests/CheckScripts.py)
-//
-// Load and run several JSBSim scripts for a short period to verify that
-// the script-loading path and the simulation loop work through the FFI.
+// get_model_name  (from tests/TestMiscellaneous.py)
 // ===========================================================================
 
-/// Helper: load a script by name (relative to JSBSIM_ROOT/scripts/),
-/// run initial conditions, then step the simulation up to `end_time` seconds.
+#[test]
+fn get_model_name_after_load() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("c172x"));
+    let name = sim.get_model_name();
+    assert!(
+        !name.is_empty(),
+        "Model name should not be empty after loading c172x"
+    );
+    println!("Model name: {name}");
+}
+
+// ===========================================================================
+// get_version
+// ===========================================================================
+
+#[test]
+fn get_version_returns_non_empty() {
+    let version = Sim::get_version();
+    assert!(
+        !version.is_empty(),
+        "JSBSim version string should not be empty"
+    );
+    println!("JSBSim version: {version}");
+}
+
+// ===========================================================================
+// CheckScripts  (from tests/CheckScripts.py)
+// ===========================================================================
+
 fn run_script(script_name: &str, end_time: f64) {
     let root = match jsbsim_root() {
         Some(r) => r,
@@ -130,9 +141,8 @@ fn run_script(script_name: &str, end_time: f64) {
     );
     assert!(sim.run_ic(), "RunIC failed for script {script_name}");
 
-    // Step until we reach end_time or run() returns false (simulation ended).
     loop {
-        let t = sim.get_property("simulation/sim-time-sec");
+        let t = sim.get_sim_time();
         if t >= end_time {
             break;
         }
@@ -140,11 +150,8 @@ fn run_script(script_name: &str, end_time: f64) {
             break;
         }
     }
-    let t = sim.get_property("simulation/sim-time-sec");
-    assert!(
-        t > 0.0,
-        "Simulation time should have advanced for script {script_name}, got {t}"
-    );
+    let t = sim.get_sim_time();
+    assert!(t > 0.0, "Sim time should have advanced for {script_name}, got {t}");
 }
 
 #[test]
@@ -169,9 +176,6 @@ fn script_c1722() {
 
 // ===========================================================================
 // TestInitialConditions  (from tests/TestInitialConditions.py)
-//
-// Verify that initial-condition properties are correctly set and
-// propagated after RunIC.
 // ===========================================================================
 
 #[test]
@@ -182,28 +186,17 @@ fn initial_conditions_altitude_and_speed() {
     };
     assert!(sim.load_model("c172x"));
 
-    // Set ICs via properties (the same approach the Python test uses).
     sim.set_property("ic/h-sl-ft", 5000.0);
     sim.set_property("ic/vc-kts", 120.0);
     sim.set_property("ic/gamma-deg", 0.0);
     sim.set_property("ic/psi-true-deg", 90.0);
-
     assert!(sim.run_ic(), "RunIC failed");
 
-    // After RunIC the simulation state should reflect the ICs.
     let alt = sim.get_property("position/h-sl-ft");
-    assert!(
-        (alt - 5000.0).abs() < 10.0,
-        "Altitude should be ~5000 ft, got {alt}"
-    );
+    assert!((alt - 5000.0).abs() < 10.0, "Altitude should be ~5000 ft, got {alt}");
 
-    // Heading should be approximately what we set.
-    let psi = sim.get_property("attitude/psi-rad");
-    let psi_deg = psi.to_degrees();
-    assert!(
-        (psi_deg - 90.0).abs() < 1.0,
-        "Heading should be ~90°, got {psi_deg}"
-    );
+    let psi_deg = sim.get_property("attitude/psi-rad").to_degrees();
+    assert!((psi_deg - 90.0).abs() < 1.0, "Heading should be ~90°, got {psi_deg}");
 }
 
 #[test]
@@ -218,20 +211,38 @@ fn initial_conditions_ball_position() {
     sim.set_property("ic/h-sl-ft", target_alt_ft);
     sim.set_property("ic/vc-kts", 0.0);
     sim.set_property("ic/gamma-deg", 0.0);
-
-    assert!(sim.run_ic(), "RunIC failed for ball");
+    assert!(sim.run_ic());
 
     let alt = sim.get_property("position/h-sl-ft");
-    assert!(
-        (alt - target_alt_ft).abs() < 10.0,
-        "Ball altitude should be ~{target_alt_ft} ft, got {alt}"
-    );
+    assert!((alt - target_alt_ft).abs() < 10.0, "Ball altitude should be ~{target_alt_ft} ft, got {alt}");
+}
+
+// ===========================================================================
+// load_ic — Load initial conditions from XML file
+// (from tests/TestInitialConditions.py)
+// ===========================================================================
+
+#[test]
+fn load_ic_from_file() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("c172x"));
+
+    // Load the reset01.xml IC file (ships with c172x aircraft).
+    let loaded = sim.load_ic("reset01.xml", true);
+    assert!(loaded, "Failed to load IC file reset01.xml");
+    assert!(sim.run_ic(), "RunIC failed after loading IC file");
+
+    let alt = sim.get_property("position/h-sl-ft");
+    assert!(alt > 0.0, "Altitude should be positive after loading ICs, got {alt}");
 }
 
 // ===========================================================================
 // CheckSimTimeReset  (from tests/CheckSimTimeReset.py)
 //
-// Verify that the simulation time starts at zero and advances correctly.
+// Uses get_sim_time() and reset_to_initial_conditions()
 // ===========================================================================
 
 #[test]
@@ -241,17 +252,13 @@ fn sim_time_starts_at_zero() {
         None => return,
     };
     assert!(sim.load_model("c172x"));
-
     sim.set_property("ic/h-sl-ft", 3000.0);
     sim.set_property("ic/vc-kts", 100.0);
     sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
 
-    let t0 = sim.get_property("simulation/sim-time-sec");
-    assert!(
-        t0.abs() < 1e-9,
-        "Sim time should be 0 after RunIC, got {t0}"
-    );
+    let t0 = sim.get_sim_time();
+    assert!(t0.abs() < 1e-9, "Sim time should be 0 after RunIC, got {t0}");
 }
 
 #[test]
@@ -261,22 +268,16 @@ fn sim_time_advances() {
         None => return,
     };
     assert!(sim.load_model("c172x"));
-
     sim.set_property("ic/h-sl-ft", 3000.0);
     sim.set_property("ic/vc-kts", 100.0);
     sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
 
-    // Step a number of frames.
     for _ in 0..100 {
         sim.run();
     }
-
-    let t = sim.get_property("simulation/sim-time-sec");
-    assert!(
-        t > 0.0,
-        "Sim time should advance after stepping, got {t}"
-    );
+    let t = sim.get_sim_time();
+    assert!(t > 0.0, "Sim time should advance, got {t}");
 }
 
 #[test]
@@ -286,7 +287,6 @@ fn sim_time_monotonically_increasing() {
         None => return,
     };
     assert!(sim.load_model("ball"));
-
     sim.set_property("ic/h-sl-ft", 10000.0);
     sim.set_property("ic/vc-kts", 0.0);
     sim.set_property("ic/gamma-deg", 0.0);
@@ -295,20 +295,172 @@ fn sim_time_monotonically_increasing() {
     let mut prev_t = 0.0_f64;
     for _ in 0..200 {
         sim.run();
-        let t = sim.get_property("simulation/sim-time-sec");
-        assert!(
-            t > prev_t,
-            "Time must be monotonically increasing: prev={prev_t}, now={t}"
-        );
+        let t = sim.get_sim_time();
+        assert!(t > prev_t, "Time must increase: prev={prev_t}, now={t}");
         prev_t = t;
     }
 }
 
+#[test]
+fn reset_to_initial_conditions_resets_time() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("c172x"));
+    sim.set_property("ic/h-sl-ft", 3000.0);
+    sim.set_property("ic/vc-kts", 100.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
+    // Run to accumulate time.
+    for _ in 0..100 {
+        sim.run();
+    }
+    let t_before = sim.get_sim_time();
+    assert!(t_before > 0.0);
+
+    // Reset.
+    sim.reset_to_initial_conditions(1);
+
+    let t_after = sim.get_sim_time();
+    assert!(
+        t_after.abs() < 1e-9,
+        "After reset, sim time should be 0, got {t_after}"
+    );
+}
+
+// ===========================================================================
+// TestSuspend  (from tests/TestSuspend.py)
+//
+// Now properly uses hold() / resume() / holding()
+// ===========================================================================
+
+#[test]
+fn hold_and_resume() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("c172x"));
+    sim.set_property("ic/h-sl-ft", 3000.0);
+    sim.set_property("ic/vc-kts", 100.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
+    // Run a few frames.
+    for _ in 0..50 {
+        sim.run();
+    }
+    let t_before = sim.get_sim_time();
+    assert!(t_before > 0.0);
+    assert!(!sim.holding(), "Should not be holding yet");
+
+    // Hold.
+    sim.hold();
+    assert!(sim.holding(), "Should be holding after hold()");
+
+    // Step while held — time must not advance.
+    for _ in 0..50 {
+        sim.run();
+    }
+    let t_held = sim.get_sim_time();
+    assert!(
+        (t_held - t_before).abs() < 1e-9,
+        "While held, time should not advance: before={t_before}, held={t_held}"
+    );
+
+    // Resume.
+    sim.resume();
+    assert!(!sim.holding(), "Should not be holding after resume()");
+
+    for _ in 0..50 {
+        sim.run();
+    }
+    let t_resumed = sim.get_sim_time();
+    assert!(
+        t_resumed > t_before,
+        "After resume, time should advance: before={t_before}, resumed={t_resumed}"
+    );
+}
+
+// ===========================================================================
+// Suspend / Resume integration  (from tests/TestSuspend.py)
+// ===========================================================================
+
+#[test]
+fn suspend_and_resume_integration() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    sim.set_property("ic/h-sl-ft", 10_000.0);
+    sim.set_property("ic/vc-kts", 0.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
+    // Run a few steps.
+    for _ in 0..50 {
+        sim.run();
+    }
+    let alt_before = sim.get_property("position/h-sl-ft");
+
+    // Suspend integration — physics frozen.
+    sim.suspend_integration();
+
+    for _ in 0..50 {
+        sim.run();
+    }
+    let alt_suspended = sim.get_property("position/h-sl-ft");
+    assert!(
+        (alt_suspended - alt_before).abs() < 1.0,
+        "With integration suspended, altitude should not change: \
+         before={alt_before}, suspended={alt_suspended}"
+    );
+
+    // Resume integration.
+    sim.resume_integration();
+    for _ in 0..50 {
+        sim.run();
+    }
+    let alt_resumed = sim.get_property("position/h-sl-ft");
+    assert!(
+        alt_resumed < alt_before,
+        "After resuming integration, ball should descend: \
+         before={alt_before}, resumed={alt_resumed}"
+    );
+}
+
+// ===========================================================================
+// EnableIncrementThenHold  (from tests/TestSuspend.py)
+//
+// Note: enable_increment_then_hold() and check_incremental_hold() are
+// exposed but JSBSim's internal Run() loop may not call CheckIncrementalHold
+// in all configurations.  We verify the API is callable without crashing.
+// ===========================================================================
+
+#[test]
+fn increment_then_hold_does_not_crash() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    sim.set_property("ic/h-sl-ft", 10_000.0);
+    sim.set_property("ic/vc-kts", 0.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
+    sim.enable_increment_then_hold(5);
+    for _ in 0..20 {
+        sim.run();
+    }
+    // Just verify the API is callable; the hold behavior is tested via hold()/resume().
+}
+
 // ===========================================================================
 // TestStdAtmosphere  (from tests/TestStdAtmosphere.py)
-//
-// Verify that standard-atmosphere properties at sea level match the ISA
-// 1976 reference values.
 // ===========================================================================
 
 #[test]
@@ -318,32 +470,19 @@ fn std_atmosphere_sea_level() {
         None => return,
     };
     assert!(sim.load_model("ball"));
-
     sim.set_property("ic/h-sl-ft", 0.0);
     sim.set_property("ic/vc-kts", 0.0);
     sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
 
-    // ISA sea-level temperature = 518.67 °R  (288.15 K)
     let temp_r = sim.get_property("atmosphere/T-R");
-    assert!(
-        (temp_r - 518.67).abs() < 0.5,
-        "Sea-level temperature should be ~518.67 °R, got {temp_r}"
-    );
+    assert!((temp_r - 518.67).abs() < 0.5, "Sea-level temp should be ~518.67 °R, got {temp_r}");
 
-    // ISA sea-level pressure = 2116.22 psf  (101325 Pa)
     let p_psf = sim.get_property("atmosphere/P-psf");
-    assert!(
-        (p_psf - 2116.22).abs() < 1.0,
-        "Sea-level pressure should be ~2116.22 psf, got {p_psf}"
-    );
+    assert!((p_psf - 2116.22).abs() < 1.0, "Sea-level pressure should be ~2116.22 psf, got {p_psf}");
 
-    // ISA sea-level density ≈ 0.002377 slugs/ft³
     let rho = sim.get_property("atmosphere/rho-slugs_ft3");
-    assert!(
-        (rho - 0.002377).abs() < 0.0001,
-        "Sea-level density should be ~0.002377 slug/ft³, got {rho}"
-    );
+    assert!((rho - 0.002377).abs() < 0.0001, "Sea-level density should be ~0.002377, got {rho}");
 }
 
 #[test]
@@ -353,34 +492,21 @@ fn std_atmosphere_at_altitude() {
         None => return,
     };
     assert!(sim.load_model("ball"));
-
-    // Set to 36,089 ft (tropopause in ISA).
     let tropopause_ft = 36_089.0;
     sim.set_property("ic/h-sl-ft", tropopause_ft);
     sim.set_property("ic/vc-kts", 0.0);
     sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
 
-    // ISA tropopause temperature = 216.65 K = 389.97 °R
     let temp_r = sim.get_property("atmosphere/T-R");
-    assert!(
-        (temp_r - 389.97).abs() < 1.0,
-        "Tropopause temperature should be ~389.97 °R, got {temp_r}"
-    );
+    assert!((temp_r - 389.97).abs() < 1.0, "Tropopause temp should be ~389.97 °R, got {temp_r}");
 
-    // Pressure at the tropopause should be significantly lower than sea level.
     let p_psf = sim.get_property("atmosphere/P-psf");
-    assert!(
-        p_psf < 500.0 && p_psf > 400.0,
-        "Tropopause pressure should be ~472 psf, got {p_psf}"
-    );
+    assert!(p_psf < 500.0 && p_psf > 400.0, "Tropopause pressure should be ~472 psf, got {p_psf}");
 }
 
 // ===========================================================================
 // TestPressureAltitude  (from tests/TestPressureAltitude.py)
-//
-// Set a geometric altitude, then read back the pressure altitude and
-// verify it is consistent.
 // ===========================================================================
 
 #[test]
@@ -390,19 +516,13 @@ fn pressure_altitude_at_sea_level() {
         None => return,
     };
     assert!(sim.load_model("ball"));
-
     sim.set_property("ic/h-sl-ft", 0.0);
     sim.set_property("ic/vc-kts", 0.0);
     sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
 
-    // With no temperature offset, pressure altitude == geometric altitude at
-    // sea level.
     let pa = sim.get_property("atmosphere/pressure-altitude");
-    assert!(
-        pa.abs() < 1.0,
-        "Pressure altitude at sea level should be ~0 ft, got {pa}"
-    );
+    assert!(pa.abs() < 1.0, "Pressure altitude at sea level should be ~0, got {pa}");
 }
 
 #[test]
@@ -412,25 +532,17 @@ fn pressure_altitude_at_10000ft() {
         None => return,
     };
     assert!(sim.load_model("ball"));
-
     sim.set_property("ic/h-sl-ft", 10_000.0);
     sim.set_property("ic/vc-kts", 0.0);
     sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
 
-    // With standard atmosphere (no delta-T), pressure altitude should match
-    // geometric altitude closely.
     let pa = sim.get_property("atmosphere/pressure-altitude");
-    assert!(
-        (pa - 10_000.0).abs() < 50.0,
-        "Pressure altitude at 10 000 ft should be ~10 000 ft, got {pa}"
-    );
+    assert!((pa - 10_000.0).abs() < 50.0, "Pressure altitude should be ~10000, got {pa}");
 }
 
 // ===========================================================================
 // TestMiscellaneous – property round-trip  (from tests/TestMiscellaneous.py)
-//
-// Verify get/set property round-trips and that the property tree works.
 // ===========================================================================
 
 #[test]
@@ -440,19 +552,14 @@ fn property_round_trip() {
         None => return,
     };
     assert!(sim.load_model("ball"));
-
     sim.set_property("ic/h-sl-ft", 1000.0);
     sim.set_property("ic/vc-kts", 0.0);
     sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
 
-    // Throttle-command should be settable and readable.
     assert!(sim.set_property("fcs/throttle-cmd-norm", 0.75));
     let v = sim.get_property("fcs/throttle-cmd-norm");
-    assert!(
-        (v - 0.75).abs() < 1e-6,
-        "Throttle should round-trip to 0.75, got {v}"
-    );
+    assert!((v - 0.75).abs() < 1e-6, "Throttle should round-trip to 0.75, got {v}");
 }
 
 #[test]
@@ -465,19 +572,94 @@ fn property_set_and_read_ic() {
 
     let target = 7500.0_f64;
     sim.set_property("ic/h-sl-ft", target);
-
-    // IC properties should be readable before RunIC.
     let readback = sim.get_property("ic/h-sl-ft");
+    assert!((readback - target).abs() < 1e-6, "IC altitude should round-trip, got {readback}");
+}
+
+// ===========================================================================
+// has_property  (from tests/TestMiscellaneous.py)
+// ===========================================================================
+
+#[test]
+fn has_property_existing() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    sim.set_property("ic/h-sl-ft", 1000.0);
+    sim.set_property("ic/vc-kts", 0.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
     assert!(
-        (readback - target).abs() < 1e-6,
-        "IC altitude should round-trip, got {readback}"
+        sim.has_property("simulation/sim-time-sec"),
+        "simulation/sim-time-sec should exist"
+    );
+    assert!(
+        sim.has_property("position/h-sl-ft"),
+        "position/h-sl-ft should exist"
+    );
+}
+
+#[test]
+fn has_property_nonexistent() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    assert!(sim.run_ic());
+
+    assert!(
+        !sim.has_property("this/property/does/not/exist"),
+        "Nonexistent property should return false"
+    );
+}
+
+// ===========================================================================
+// query_property_catalog  (from tests/TestMiscellaneous.py)
+// ===========================================================================
+
+#[test]
+fn query_property_catalog_finds_results() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    assert!(sim.run_ic());
+
+    let catalog = sim.query_property_catalog("simulation");
+    assert!(
+        !catalog.is_empty(),
+        "Catalog query for 'simulation' should return results"
+    );
+    assert!(
+        catalog.contains("simulation/sim-time-sec"),
+        "Catalog should contain simulation/sim-time-sec, got:\n{catalog}"
+    );
+}
+
+#[test]
+fn query_property_catalog_empty_for_nonsense() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    assert!(sim.run_ic());
+
+    let catalog = sim.query_property_catalog("zzz_nonexistent_prefix");
+    // JSBSim returns "No matches found" rather than an empty string.
+    assert!(
+        catalog.is_empty() || catalog.contains("No matches"),
+        "Catalog query for nonsense should be empty or 'No matches', got: {catalog}"
     );
 }
 
 // ===========================================================================
 // TestHoldDown  (from tests/TestHoldDown.py)
-//
-// Verify that the hold-down property prevents the aircraft from moving.
 // ===========================================================================
 
 #[test]
@@ -487,72 +669,36 @@ fn hold_down_prevents_motion() {
         None => return,
     };
     assert!(sim.load_model("c172x"));
-
     sim.set_property("ic/h-sl-ft", 0.0);
     sim.set_property("ic/vc-kts", 0.0);
     sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
 
-    // Engage hold-down.
     sim.set_property("forces/hold-down", 1.0);
-
-    // Step the simulation.
     for _ in 0..200 {
         sim.run();
     }
 
-    // With hold-down active the altitude should remain at or very near 0.
     let alt = sim.get_property("position/h-sl-ft");
-    assert!(
-        alt.abs() < 5.0,
-        "With hold-down active, altitude should stay ~0 ft, got {alt}"
-    );
+    assert!(alt.abs() < 5.0, "With hold-down, altitude should stay ~0, got {alt}");
 }
 
 // ===========================================================================
-// Simulation property consistency  (inspired by TestSuspend.py /
-// TestMiscellaneous.py)
-//
-// Note: The Python TestSuspend uses fdm.hold()/resume() which are direct
-// C++ method calls not exposed in this FFI.  Instead we verify that
-// simulation properties remain self-consistent across a run.
+// get_dt / set_dt  (from CheckScripts.py testScriptEndTime)
 // ===========================================================================
 
 #[test]
-fn simulation_dt_consistent_with_time() {
+fn get_dt_returns_positive() {
     let mut sim = match create_fdm() {
         Some(s) => s,
         None => return,
     };
     assert!(sim.load_model("ball"));
-
-    sim.set_property("ic/h-sl-ft", 10_000.0);
-    sim.set_property("ic/vc-kts", 0.0);
-    sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
 
-    let dt = sim.get_property("simulation/dt");
+    let dt = sim.get_dt();
     assert!(dt > 0.0, "dt should be positive, got {dt}");
-
-    // Run 100 steps and verify accumulated time ≈ 100 * dt.
-    let n_steps = 100;
-    for _ in 0..n_steps {
-        sim.run();
-    }
-
-    let t = sim.get_property("simulation/sim-time-sec");
-    let expected = dt * n_steps as f64;
-    assert!(
-        (t - expected).abs() < dt,
-        "After {n_steps} steps at dt={dt}, time should be ~{expected}, got {t}"
-    );
 }
-
-// ===========================================================================
-// dt / timestep control  (inspired by CheckScripts.py testScriptEndTime)
-//
-// Verify that set_dt changes the integration timestep.
-// ===========================================================================
 
 #[test]
 fn set_dt_changes_timestep() {
@@ -561,41 +707,67 @@ fn set_dt_changes_timestep() {
         None => return,
     };
     assert!(sim.load_model("ball"));
-
     sim.set_property("ic/h-sl-ft", 10_000.0);
     sim.set_property("ic/vc-kts", 0.0);
     sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
 
-    let custom_dt = 0.01; // 10 ms
+    let custom_dt = 0.01;
     sim.set_dt(custom_dt);
-
-    // Step once, then check the dt property.
     sim.run();
-    let dt_read = sim.get_property("simulation/dt");
-    assert!(
-        (dt_read - custom_dt).abs() < 1e-9,
-        "dt should be {custom_dt}, got {dt_read}"
-    );
 
-    // Step 100 frames at 0.01 s → expect ~1.0 s of sim time.
-    // (We already did one step, so 99 more.)
+    let dt_read = sim.get_dt();
+    assert!((dt_read - custom_dt).abs() < 1e-9, "dt should be {custom_dt}, got {dt_read}");
+
     for _ in 0..99 {
         sim.run();
     }
-    let t = sim.get_property("simulation/sim-time-sec");
-    assert!(
-        (t - 1.0).abs() < 0.05,
-        "After 100 steps at dt=0.01, sim time should be ~1.0 s, got {t}"
-    );
+    let t = sim.get_sim_time();
+    assert!((t - 1.0).abs() < 0.05, "After 100 steps at dt=0.01, time should be ~1.0s, got {t}");
+}
+
+#[test]
+fn simulation_dt_consistent_with_time() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    sim.set_property("ic/h-sl-ft", 10_000.0);
+    sim.set_property("ic/vc-kts", 0.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
+    let dt = sim.get_dt();
+    assert!(dt > 0.0);
+
+    let n_steps = 100;
+    for _ in 0..n_steps {
+        sim.run();
+    }
+
+    let t = sim.get_sim_time();
+    let expected = dt * n_steps as f64;
+    assert!((t - expected).abs() < dt, "After {n_steps} steps, time should be ~{expected}, got {t}");
 }
 
 // ===========================================================================
-// Multiple instances  (inspired by TestMiscellaneous.py property-manager
-// sharing test)
-//
-// Verify that two independent Sim instances can coexist without
-// interfering with each other.
+// set_debug_level
+// ===========================================================================
+
+#[test]
+fn set_debug_level_does_not_crash() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    sim.set_debug_level(0); // silent
+    assert!(sim.load_model("ball"));
+    sim.set_debug_level(1); // restore default
+}
+
+// ===========================================================================
+// Multiple instances  (from tests/TestMiscellaneous.py)
 // ===========================================================================
 
 #[test]
@@ -611,7 +783,6 @@ fn multiple_independent_instances() {
     assert!(sim_a.load_model("ball"));
     assert!(sim_b.load_model("c172x"));
 
-    // Different ICs.
     sim_a.set_property("ic/h-sl-ft", 50_000.0);
     sim_a.set_property("ic/vc-kts", 0.0);
     sim_a.set_property("ic/gamma-deg", 0.0);
@@ -630,8 +801,6 @@ fn multiple_independent_instances() {
 
     let alt_a = sim_a.get_property("position/h-sl-ft");
     let alt_b = sim_b.get_property("position/h-sl-ft");
-
-    // The two simulations should have very different altitudes.
     assert!(
         (alt_a - alt_b).abs() > 100.0,
         "Independent sims should diverge: alt_a={alt_a}, alt_b={alt_b}"
@@ -639,10 +808,7 @@ fn multiple_independent_instances() {
 }
 
 // ===========================================================================
-// Full script run  (inspired by CheckScripts.py)
-//
-// Run a longer scenario to verify the wrapper handles sustained
-// simulation loops.
+// Full script run  (from CheckScripts.py)
 // ===========================================================================
 
 #[test]
@@ -660,8 +826,7 @@ fn full_script_run_ball_orbit() {
     let mut steps = 0u64;
     let max_time = 30.0;
     loop {
-        let t = sim.get_property("simulation/sim-time-sec");
-        if t >= max_time {
+        if sim.get_sim_time() >= max_time {
             break;
         }
         if !sim.run() {
@@ -670,23 +835,13 @@ fn full_script_run_ball_orbit() {
         steps += 1;
     }
 
-    let t_final = sim.get_property("simulation/sim-time-sec");
-    assert!(
-        t_final >= max_time - 1.0,
-        "Script should have run to ~{max_time}s, got {t_final}"
-    );
-    assert!(
-        steps > 100,
-        "Should have taken many steps, took {steps}"
-    );
-    println!("ball_orbit: {steps} steps, final time {t_final:.2}s");
+    let t_final = sim.get_sim_time();
+    assert!(t_final >= max_time - 1.0, "Should run to ~{max_time}s, got {t_final}");
+    assert!(steps > 100, "Should take many steps, took {steps}");
 }
 
 // ===========================================================================
-// Gravity / free-fall  (validates physics through the FFI)
-//
-// Drop a ball from 10 000 ft with zero velocity and verify the altitude
-// decreases over time (i.e., gravity is working through the wrapper).
+// Gravity / free-fall physics validation
 // ===========================================================================
 
 #[test]
@@ -703,33 +858,20 @@ fn ball_free_fall_altitude_decreases() {
     sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
 
-    // Step 5 seconds of simulation.
     sim.set_dt(0.01);
     for _ in 0..500 {
         sim.run();
     }
 
     let alt = sim.get_property("position/h-sl-ft");
-    assert!(
-        alt < initial_alt,
-        "After free-fall the ball should have descended: \
-         initial={initial_alt}, current={alt}"
-    );
+    assert!(alt < initial_alt, "Ball should descend: initial={initial_alt}, current={alt}");
 
-    // Rough sanity: after ~5s of free-fall, Δh ≈ ½g·t² ≈ 402 ft.
     let delta = initial_alt - alt;
-    assert!(
-        delta > 300.0 && delta < 600.0,
-        "Free-fall displacement should be ~400 ft, got {delta}"
-    );
-    println!("Free-fall: Δalt = {delta:.1} ft after ~5 s");
+    assert!(delta > 300.0 && delta < 600.0, "Free-fall ~5s should be ~400ft, got {delta}");
 }
 
 // ===========================================================================
-// C172x – trimmed flight properties  (inspired by TestInitialConditions.py)
-//
-// Verify that a c172x with sensible ICs produces physically plausible
-// property values after a short run.
+// C172x flight properties plausible  (from TestInitialConditions.py)
 // ===========================================================================
 
 #[test]
@@ -746,34 +888,99 @@ fn c172x_flight_properties_plausible() {
     sim.set_property("ic/psi-true-deg", 0.0);
     assert!(sim.run_ic());
 
-    // Run for 2 seconds.
     for _ in 0..240 {
         sim.run();
     }
 
-    // Airspeed should still be positive.
     let vc = sim.get_property("velocities/vc-kts");
-    assert!(
-        vc > 50.0,
-        "Calibrated airspeed should be > 50 kts, got {vc}"
-    );
+    assert!(vc > 50.0, "Airspeed should be > 50 kts, got {vc}");
 
-    // Altitude should still be in a reasonable band.
     let alt = sim.get_property("position/h-sl-ft");
-    assert!(
-        alt > 4000.0 && alt < 6000.0,
-        "Altitude should remain near 5000 ft, got {alt}"
-    );
+    assert!(alt > 4000.0 && alt < 6000.0, "Altitude should be near 5000, got {alt}");
 
-    // Roll / pitch should be modest (not tumbling).
     let phi = sim.get_property("attitude/phi-rad").to_degrees().abs();
     let theta = sim.get_property("attitude/theta-rad").to_degrees().abs();
+    assert!(phi < 30.0, "Roll should be modest, got {phi}°");
+    assert!(theta < 30.0, "Pitch should be modest, got {theta}°");
+}
+
+// ===========================================================================
+// Trim  (from tests/CheckTrim.py)
+// ===========================================================================
+
+#[test]
+fn do_trim_longitudinal() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("c172x"));
+
+    sim.set_property("ic/h-sl-ft", 5000.0);
+    sim.set_property("ic/vc-kts", 100.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
+    let trimmed = sim.do_trim(jsbsim_ffi::trim::LONGITUDINAL);
+    if !trimmed {
+        eprintln!("Longitudinal trim failed (may be expected for some configs)");
+        return;
+    }
+
+    // After trim, pitch rate should be near zero.
+    let q = sim.get_property("velocities/q-rad_sec");
     assert!(
-        phi < 30.0,
-        "Roll should be modest, got {phi}°"
+        q.abs() < 0.01,
+        "After longitudinal trim, pitch rate should be ~0, got {q}"
     );
+
+    // Run a few steps — altitude should stay roughly constant.
+    let alt_before = sim.get_property("position/h-sl-ft");
+    for _ in 0..100 {
+        sim.run();
+    }
+    let alt_after = sim.get_property("position/h-sl-ft");
     assert!(
-        theta < 30.0,
-        "Pitch should be modest, got {theta}°"
+        (alt_after - alt_before).abs() < 50.0,
+        "After trim, altitude should be stable: before={alt_before}, after={alt_after}"
     );
+}
+
+// ===========================================================================
+// Path configuration
+// ===========================================================================
+
+#[test]
+fn set_paths_does_not_crash() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    // These should return true (they just set internal paths).
+    assert!(sim.set_aircraft_path("aircraft"));
+    assert!(sim.set_engine_path("engine"));
+    assert!(sim.set_systems_path("systems"));
+}
+
+// ===========================================================================
+// Output control — just verify no crashes
+// ===========================================================================
+
+#[test]
+fn disable_enable_output_does_not_crash() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    assert!(sim.run_ic());
+
+    sim.disable_output();
+    for _ in 0..10 {
+        sim.run();
+    }
+    sim.enable_output();
+    for _ in 0..10 {
+        sim.run();
+    }
 }

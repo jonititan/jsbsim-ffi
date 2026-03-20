@@ -29,6 +29,7 @@ use jsbsim_ffi::Sim;
 let mut sim = Sim::new("/path/to/jsbsim");   // root with aircraft/, engine/, systems/, scripts/
 sim.load_model("c172x");                      // load aircraft by name
 sim.load_script("scripts/c1723.xml");         // or load a scenario script
+sim.load_ic("reset01.xml", true);             // load IC file from aircraft dir
 sim.set_property("ic/h-sl-ft", 5000.0);       // set initial conditions
 sim.run_ic();                                  // initialise
 sim.set_dt(0.01);                              // optional: set timestep
@@ -37,6 +38,35 @@ let alt = sim.get_property("position/h-sl-ft"); // read properties
 ```
 
 `Sim` implements `Drop` — the C++ `FGFDMExec` is destroyed automatically.
+
+### Full method list
+
+| Category | Method | Description |
+|---|---|---|
+| **Lifecycle** | `Sim::new(root_dir)` | Create FDM instance |
+| | `Sim::get_version()` | JSBSim version string |
+| **Loading** | `load_model(name)` | Load aircraft (e.g. `"c172x"`) |
+| | `load_script(path)` | Load scenario script |
+| | `load_ic(file, use_aircraft_path)` | Load IC from XML file |
+| **Simulation** | `run_ic()` | Initialize from ICs |
+| | `run()` | Advance one timestep |
+| | `set_dt(s)` / `get_dt()` | Set/get timestep |
+| | `get_sim_time()` | Current sim time (seconds) |
+| | `reset_to_initial_conditions(mode)` | Reset sim (0=state, 1=reload) |
+| **Hold/Resume** | `hold()` / `resume()` / `holding()` | Pause/resume simulation |
+| | `enable_increment_then_hold(n)` | Run N steps then auto-hold |
+| **Integration** | `suspend_integration()` / `resume_integration()` | Freeze/unfreeze physics |
+| **Trim** | `do_trim(mode)` | Trim aircraft (`trim::LONGITUDINAL`, `FULL`, `GROUND`, etc.) |
+| **Properties** | `get_property(path)` / `set_property(path, val)` | Read/write properties |
+| | `has_property(path)` | Check if property exists |
+| | `query_property_catalog(filter)` | Search property tree |
+| | `print_property_catalog()` | Dump all properties to stdout |
+| **Output** | `set_output_directive(file)` | Add output XML directive |
+| | `enable_output()` / `disable_output()` | Toggle data output |
+| | `set_output_filename(n, file)` | Set output channel filename |
+| **Paths** | `set_aircraft_path(p)` / `set_engine_path(p)` / `set_systems_path(p)` | Configure search paths |
+| **Debug** | `set_debug_level(n)` | 0=silent, higher=verbose |
+| | `get_model_name()` | Name of loaded aircraft |
 
 ## Examples
 
