@@ -16,7 +16,7 @@
 //!   Esc         → quit
 //!
 //! Run with:
-//!   LD_LIBRARY_PATH=/usr/local/lib cargo run --example fly
+//!   JSBSIM_ROOT=/path/to/jsbsim cargo run --example fly
 
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
@@ -47,10 +47,21 @@ fn clamp(val: f64, min: f64, max: f64) -> f64 {
 
 fn main() {
     // ── 1. Create FGFDMExec and load model ──────────────────────────────
-    // Change this path to your JSBSim source checkout
-    let jsbsim_root = "/home/joni/jsbsim";
+    // JSBSIM_ROOT must point to a directory containing aircraft/, engine/,
+    // systems/ subdirectories (typically the JSBSim source checkout).
+    let jsbsim_root = std::env::var("JSBSIM_ROOT").unwrap_or_else(|_| {
+        eprintln!(
+            "JSBSIM_ROOT is not set.  Point it at a directory containing\n\
+             aircraft/, engine/, systems/ subdirectories.\n\
+             \n\
+             Example:\n\
+             \n\
+                 JSBSIM_ROOT=/path/to/jsbsim cargo run --example fly\n"
+        );
+        std::process::exit(1);
+    });
 
-    let mut sim = Sim::new(jsbsim_root);
+    let mut sim = Sim::new(&jsbsim_root);
 
     if !sim.load_model("c172x") {
         eprintln!("Failed to load aircraft model 'c172x'!");
