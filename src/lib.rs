@@ -2,7 +2,18 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 #[allow(non_camel_case_types)]
-pub type JSBSim_FGFDMExec = *mut std::ffi::c_void;
+type JSBSim_FGFDMExec = *mut std::ffi::c_void;
+
+/// C function-pointer type matching `jsbsim_get_agl_fn_t` in the wrapper.
+type GetAglFn = unsafe extern "C" fn(
+    user_data: *mut std::ffi::c_void,
+    time: f64,
+    location: *const f64,
+    contact: *mut f64,
+    normal: *mut f64,
+    velocity: *mut f64,
+    ang_velocity: *mut f64,
+) -> f64;
 
 #[link(name = "jsbsim_wrapper")]
 extern "C" {
@@ -33,6 +44,7 @@ extern "C" {
     // Integration suspend
     fn jsbsim_suspend_integration(fdm: JSBSim_FGFDMExec);
     fn jsbsim_resume_integration(fdm: JSBSim_FGFDMExec);
+    fn jsbsim_integration_suspended(fdm: JSBSim_FGFDMExec) -> bool;
 
     // Trim
     fn jsbsim_do_trim(fdm: JSBSim_FGFDMExec, mode: i32) -> bool;
@@ -62,10 +74,30 @@ extern "C" {
     fn jsbsim_set_engine_path(fdm: JSBSim_FGFDMExec, path: *const c_char) -> bool;
     fn jsbsim_set_systems_path(fdm: JSBSim_FGFDMExec, path: *const c_char) -> bool;
 
+    // Simulation time setter
+    fn jsbsim_set_sim_time(fdm: JSBSim_FGFDMExec, time: f64);
+
+    // Path getters
+    fn jsbsim_get_root_dir(fdm: JSBSim_FGFDMExec, buf: *mut c_char, buf_len: i32) -> i32;
+    fn jsbsim_get_aircraft_path(fdm: JSBSim_FGFDMExec, buf: *mut c_char, buf_len: i32) -> i32;
+    fn jsbsim_get_engine_path(fdm: JSBSim_FGFDMExec, buf: *mut c_char, buf_len: i32) -> i32;
+    fn jsbsim_get_systems_path(fdm: JSBSim_FGFDMExec, buf: *mut c_char, buf_len: i32) -> i32;
+
+    // Output filename getter
+    fn jsbsim_get_output_filename(fdm: JSBSim_FGFDMExec, n: i32, buf: *mut c_char, buf_len: i32) -> i32;
+
     // Info / Debug
     fn jsbsim_set_debug_level(fdm: JSBSim_FGFDMExec, level: i32);
     fn jsbsim_get_model_name(fdm: JSBSim_FGFDMExec, buf: *mut c_char, buf_len: i32) -> i32;
     fn jsbsim_get_version(buf: *mut c_char, buf_len: i32) -> i32;
+
+    // Ground callback
+    fn jsbsim_set_ground_callback(
+        fdm: JSBSim_FGFDMExec,
+        get_agl: GetAglFn,
+        user_data: *mut std::ffi::c_void,
+    );
+    fn jsbsim_set_terrain_elevation(fdm: JSBSim_FGFDMExec, elevation_ft: f64);
 }
 
 /// Helper: read a C string-returning FFI function into a Rust `String`.
@@ -82,6 +114,115 @@ fn read_c_string(f: impl Fn(*mut c_char, i32) -> i32) -> String {
     }
     let cstr = unsafe { CStr::from_ptr(buf.as_ptr() as *const c_char) };
     cstr.to_string_lossy().into_owned()
+}
+
+// ── Ground callback types ───────────────────────────────────────────
+
+/// Ground contact data returned by [`GroundCallback::get_agl`].
+///
+/// All coordinates use JSBSim's Earth-Centered Earth-Fixed (ECEF) frame.
+/// Distances are in **feet**, angles in **radians**.
+#[derive(Debug, Clone, Copy)]
+pub struct GroundContact {
+    /// Altitude above ground level (ft).
+    pub agl: f64,
+    /// Contact point on the terrain surface in ECEF `[x, y, z]` (ft).
+    pub contact: [f64; 3],
+    /// Unit surface-normal vector at the contact point `[x, y, z]`.
+    pub normal: [f64; 3],
+    /// Linear velocity of the terrain surface at the contact point `[x, y, z]`
+    /// (ft/s).  Usually `[0, 0, 0]` for static terrain.
+    pub velocity: [f64; 3],
+    /// Angular velocity of the terrain surface at the contact point
+    /// `[x, y, z]` (rad/s).  Usually `[0, 0, 0]` for static terrain.
+    pub ang_velocity: [f64; 3],
+}
+
+/// Trait for providing custom terrain / ground interaction to JSBSim.
+///
+/// Implement this trait and install it with [`Sim::set_ground_callback`] to
+/// feed JSBSim elevation data from your own terrain engine (e.g. heightmaps,
+/// mesh terrain, planetary models, etc.).
+///
+/// # Coordinate frame
+///
+/// All positions are in JSBSim's Earth-Centered Earth-Fixed (ECEF) frame with
+/// distances measured in **feet**.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use jsbsim_ffi::{GroundCallback, GroundContact};
+///
+/// struct FlatEarth {
+///     elevation_ft: f64,
+/// }
+///
+/// impl GroundCallback for FlatEarth {
+///     fn get_agl(&self, _time: f64, location: [f64; 3]) -> GroundContact {
+///         // Simple flat ground at the configured elevation.
+///         let radius = (location[0].powi(2)
+///                     + location[1].powi(2)
+///                     + location[2].powi(2))
+///             .sqrt();
+///         let earth_radius_ft = 20_925_646.0; // ≈ 6371 km in feet
+///         let agl = radius - earth_radius_ft - self.elevation_ft;
+///
+///         // Contact point: same direction, at ground level.
+///         let scale = (earth_radius_ft + self.elevation_ft) / radius;
+///         GroundContact {
+///             agl,
+///             contact: [location[0] * scale,
+///                       location[1] * scale,
+///                       location[2] * scale],
+///             normal:  [location[0] / radius,
+///                       location[1] / radius,
+///                       location[2] / radius],
+///             velocity:     [0.0, 0.0, 0.0],
+///             ang_velocity: [0.0, 0.0, 0.0],
+///         }
+///     }
+/// }
+/// ```
+pub trait GroundCallback {
+    /// Compute terrain contact information for a given query position.
+    ///
+    /// # Arguments
+    /// * `time`     – simulation time (s).
+    /// * `location` – query position in ECEF `[x, y, z]` (ft).
+    ///
+    /// # Returns
+    /// A [`GroundContact`] describing the terrain surface below `location`.
+    fn get_agl(&self, time: f64, location: [f64; 3]) -> GroundContact;
+}
+
+/// `extern "C"` trampoline: called by the C++ `FFIGroundCallback` bridge,
+/// dispatches into the Rust trait object stored at `user_data`.
+///
+/// # Safety
+///
+/// `user_data` must be a valid `*const Box<dyn GroundCallback>` whose
+/// pointee is alive for the duration of the call.
+unsafe extern "C" fn ground_callback_trampoline(
+    user_data: *mut std::ffi::c_void,
+    time: f64,
+    location: *const f64,
+    contact: *mut f64,
+    normal: *mut f64,
+    velocity: *mut f64,
+    ang_velocity: *mut f64,
+) -> f64 {
+    let cb = &*(user_data as *const Box<dyn GroundCallback>);
+    let loc = [*location, *location.add(1), *location.add(2)];
+
+    let result = cb.get_agl(time, loc);
+
+    std::ptr::copy_nonoverlapping(result.contact.as_ptr(), contact, 3);
+    std::ptr::copy_nonoverlapping(result.normal.as_ptr(), normal, 3);
+    std::ptr::copy_nonoverlapping(result.velocity.as_ptr(), velocity, 3);
+    std::ptr::copy_nonoverlapping(result.ang_velocity.as_ptr(), ang_velocity, 3);
+
+    result.agl
 }
 
 // ── Trim modes (mirrors JSBSim tType enum) ──────────────────────────
@@ -103,6 +244,16 @@ pub mod trim {
 
 pub struct Sim {
     inner: JSBSim_FGFDMExec,
+    /// Heap-stable storage for the Rust ground callback trait object.
+    ///
+    /// The C++ `FFIGroundCallback` bridge holds a raw pointer (`user_data`)
+    /// that points to the inner `Box<dyn GroundCallback>`.  Because this
+    /// is behind **two** layers of `Box`, the inner pointer is on the heap
+    /// and remains stable even if `Sim` is moved.
+    ///
+    /// Lifetime invariant: `jsbsim_destroy` (which tears down the C++ bridge)
+    /// is called in `Drop::drop` *before* this field is dropped.
+    _ground_callback: Option<Box<Box<dyn GroundCallback>>>,
 }
 
 impl Sim {
@@ -115,7 +266,10 @@ impl Sim {
     pub fn new(root_dir: &str) -> Self {
         let c_root = CString::new(root_dir).expect("root_dir contains null byte");
         let inner = unsafe { jsbsim_create(c_root.as_ptr()) };
-        Self { inner }
+        Self {
+            inner,
+            _ground_callback: None,
+        }
     }
 
     // ── Loading ─────────────────────────────────────────────────────
@@ -167,6 +321,11 @@ impl Sim {
         unsafe { jsbsim_get_sim_time(self.inner) }
     }
 
+    /// Set the simulation time directly (seconds).
+    pub fn set_sim_time(&mut self, time: f64) {
+        unsafe { jsbsim_set_sim_time(self.inner, time) }
+    }
+
     /// Reset the simulation to its initial conditions.
     ///
     /// `mode`: 0 = reset state only, 1 = also reload the model.
@@ -211,6 +370,11 @@ impl Sim {
     /// Resume physics integration after a suspend.
     pub fn resume_integration(&mut self) {
         unsafe { jsbsim_resume_integration(self.inner) }
+    }
+
+    /// Returns `true` if physics integration is currently suspended.
+    pub fn integration_suspended(&self) -> bool {
+        unsafe { jsbsim_integration_suspended(self.inner) }
     }
 
     // ── Trim ────────────────────────────────────────────────────────
@@ -304,6 +468,11 @@ impl Sim {
         unsafe { jsbsim_set_output_filename(self.inner, n, c_fname.as_ptr()) }
     }
 
+    /// Get the filename for output channel `n`.
+    pub fn get_output_filename(&self, n: i32) -> String {
+        read_c_string(|buf, len| unsafe { jsbsim_get_output_filename(self.inner, n, buf, len) })
+    }
+
     // ── Path configuration ──────────────────────────────────────────
 
     /// Set the aircraft directory path.
@@ -324,6 +493,26 @@ impl Sim {
         unsafe { jsbsim_set_systems_path(self.inner, c_path.as_ptr()) }
     }
 
+    /// Get the root directory path.
+    pub fn get_root_dir(&self) -> String {
+        read_c_string(|buf, len| unsafe { jsbsim_get_root_dir(self.inner, buf, len) })
+    }
+
+    /// Get the aircraft directory path.
+    pub fn get_aircraft_path(&self) -> String {
+        read_c_string(|buf, len| unsafe { jsbsim_get_aircraft_path(self.inner, buf, len) })
+    }
+
+    /// Get the engine directory path.
+    pub fn get_engine_path(&self) -> String {
+        read_c_string(|buf, len| unsafe { jsbsim_get_engine_path(self.inner, buf, len) })
+    }
+
+    /// Get the systems directory path.
+    pub fn get_systems_path(&self) -> String {
+        read_c_string(|buf, len| unsafe { jsbsim_get_systems_path(self.inner, buf, len) })
+    }
+
     // ── Info / Debug ────────────────────────────────────────────────
 
     /// Set the JSBSim debug output level (0 = silent, higher = more verbose).
@@ -340,12 +529,84 @@ impl Sim {
     pub fn get_version() -> String {
         read_c_string(|buf, len| unsafe { jsbsim_get_version(buf, len) })
     }
+
+    // ── Ground callback ─────────────────────────────────────────────
+
+    /// Install a custom ground callback.
+    ///
+    /// The callback will be invoked by JSBSim every time it needs terrain
+    /// information (ground elevation, surface normal, etc.).  This replaces
+    /// any previously installed callback (including the built-in default).
+    ///
+    /// The `Sim` takes ownership of the callback and keeps it alive until
+    /// another callback is installed, or the `Sim` is dropped.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use jsbsim_ffi::{Sim, GroundCallback, GroundContact};
+    /// struct Flat;
+    /// impl GroundCallback for Flat {
+    ///     fn get_agl(&self, _t: f64, loc: [f64; 3]) -> GroundContact {
+    ///         let r = (loc[0]*loc[0] + loc[1]*loc[1] + loc[2]*loc[2]).sqrt();
+    ///         let ground_r = 20_925_646.0; // earth radius in ft
+    ///         let s = ground_r / r;
+    ///         GroundContact {
+    ///             agl: r - ground_r,
+    ///             contact: [loc[0]*s, loc[1]*s, loc[2]*s],
+    ///             normal:  [loc[0]/r, loc[1]/r, loc[2]/r],
+    ///             velocity: [0.0; 3],
+    ///             ang_velocity: [0.0; 3],
+    ///         }
+    ///     }
+    /// }
+    ///
+    /// let mut sim = Sim::new("/path/to/jsbsim");
+    /// sim.set_ground_callback(Flat);
+    /// ```
+    pub fn set_ground_callback<C: GroundCallback + 'static>(&mut self, callback: C) {
+        // Double-box: outer Box for heap-stable address, inner Box<dyn> for trait dispatch.
+        let inner: Box<dyn GroundCallback> = Box::new(callback);
+        let outer = Box::new(inner);
+
+        // The raw pointer to the *inner* Box<dyn GroundCallback> is heap-allocated
+        // inside `outer`, so it survives moves of `self`.
+        let user_data: *mut std::ffi::c_void =
+            &*outer as *const Box<dyn GroundCallback> as *const () as *mut std::ffi::c_void;
+
+        unsafe {
+            jsbsim_set_ground_callback(self.inner, ground_callback_trampoline, user_data);
+        }
+
+        // Store the outer box to keep the callback alive.
+        // Any previously installed callback is dropped here.
+        self._ground_callback = Some(outer);
+    }
+
+    /// Set the terrain elevation (ft MSL) on the **current** ground callback.
+    ///
+    /// This is a convenience method that adjusts the built-in default
+    /// (sphere-earth) ground callback's terrain height.  It has no effect if
+    /// a custom [`GroundCallback`] that ignores `SetTerrainElevation` is
+    /// installed.
+    pub fn set_terrain_elevation(&mut self, elevation_ft: f64) {
+        unsafe { jsbsim_set_terrain_elevation(self.inner, elevation_ft) }
+    }
 }
+
+// JSBSim's C++ internals are not thread-safe.
+// `Sim` is inherently `!Send` and `!Sync` because `inner` is a raw pointer
+// (`*mut c_void`), which does not implement `Send` or `Sync`.
+// This is the correct behavior — do not add unsafe impls for these traits.
 
 impl Drop for Sim {
     fn drop(&mut self) {
+        // Destroy the C++ FDM first – this tears down the FFIGroundCallback
+        // bridge that holds a raw pointer into `_ground_callback`.
         unsafe {
             jsbsim_destroy(self.inner);
         }
+        // `_ground_callback` is dropped automatically after this, which is
+        // safe because the C++ side no longer references it.
     }
 }

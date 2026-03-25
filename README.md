@@ -51,11 +51,12 @@ let alt = sim.get_property("position/h-sl-ft"); // read properties
 | **Simulation** | `run_ic()` | Initialize from ICs |
 | | `run()` | Advance one timestep |
 | | `set_dt(s)` / `get_dt()` | Set/get timestep |
-| | `get_sim_time()` | Current sim time (seconds) |
+| | `get_sim_time()` / `set_sim_time(t)` | Get/set sim time (seconds) |
 | | `reset_to_initial_conditions(mode)` | Reset sim (0=state, 1=reload) |
 | **Hold/Resume** | `hold()` / `resume()` / `holding()` | Pause/resume simulation |
 | | `enable_increment_then_hold(n)` | Run N steps then auto-hold |
 | **Integration** | `suspend_integration()` / `resume_integration()` | Freeze/unfreeze physics |
+| | `integration_suspended()` | Query if integration is frozen |
 | **Trim** | `do_trim(mode)` | Trim aircraft (`trim::LONGITUDINAL`, `FULL`, `GROUND`, etc.) |
 | **Properties** | `get_property(path)` / `set_property(path, val)` | Read/write properties |
 | | `has_property(path)` | Check if property exists |
@@ -63,16 +64,37 @@ let alt = sim.get_property("position/h-sl-ft"); // read properties
 | | `print_property_catalog()` | Dump all properties to stdout |
 | **Output** | `set_output_directive(file)` | Add output XML directive |
 | | `enable_output()` / `disable_output()` | Toggle data output |
-| | `set_output_filename(n, file)` | Set output channel filename |
-| **Paths** | `set_aircraft_path(p)` / `set_engine_path(p)` / `set_systems_path(p)` | Configure search paths |
+| | `set_output_filename(n, file)` / `get_output_filename(n)` | Set/get output channel filename |
+| **Paths** | `set_aircraft_path(p)` / `get_aircraft_path()` | Set/get aircraft search path |
+| | `set_engine_path(p)` / `get_engine_path()` | Set/get engine search path |
+| | `set_systems_path(p)` / `get_systems_path()` | Set/get systems search path |
+| | `get_root_dir()` | Get the root directory |
 | **Debug** | `set_debug_level(n)` | 0=silent, higher=verbose |
 | | `get_model_name()` | Name of loaded aircraft |
 
 ## Examples
 
+All examples require `JSBSIM_ROOT` pointing to a JSBSim data directory:
+
 ```bash
-cargo run --example simple   # scripted Cessna 172 flight
-cargo run --example fly      # interactive keyboard flight (W/S pitch, A/D roll, Q/E yaw, ↑/↓ throttle)
+# Core examples
+JSBSIM_ROOT=/path/to/jsbsim cargo run --example simple          # scripted Cessna 172 flight
+JSBSIM_ROOT=/path/to/jsbsim cargo run --example fly             # interactive keyboard flight (W/S/A/D/Q/E + ↑/↓)
+
+# Flight examples
+JSBSIM_ROOT=/path/to/jsbsim cargo run --example simple_flight   # C172x level flight, prints state every 10s
+JSBSIM_ROOT=/path/to/jsbsim cargo run --example script_example  # run a JSBSim XML script (default: c1721.xml)
+JSBSIM_ROOT=/path/to/jsbsim cargo run --example cannonball      # ball model launched at 2000kts/45°
+
+# Atmosphere & wind
+JSBSIM_ROOT=/path/to/jsbsim cargo run --example basic_atmosphere # std atmosphere 0–100k ft
+JSBSIM_ROOT=/path/to/jsbsim cargo run --example wind_fly        # interactive flight with wind
+JSBSIM_ROOT=/path/to/jsbsim cargo run --example wind_batch      # batch wind simulation
+```
+
+The `script_example` accepts an optional script path argument:
+```bash
+JSBSIM_ROOT=/path/to/jsbsim cargo run --example script_example -- scripts/ball.xml
 ```
 
 ## Testing
@@ -96,7 +118,13 @@ jsbsim-ffi/
 ├── src/lib.rs               # safe Rust API
 ├── examples/
 │   ├── simple.rs            # scripted flight
-│   └── fly.rs               # interactive flight
+│   ├── fly.rs               # interactive flight
+│   ├── simple_flight.rs     # C172x level flight with periodic output
+│   ├── script_example.rs    # run any JSBSim XML script
+│   ├── cannonball.rs        # ballistic trajectory simulation
+│   ├── basic_atmosphere.rs  # standard atmosphere table
+│   ├── wind_fly.rs          # interactive flight with wind
+│   └── wind_batch.rs        # batch wind simulation
 └── tests/
     ├── test_smoke.rs         # basic linkage/smoke tests
     └── jsbsim_tests.rs       # integration tests (from JSBSim test suite)

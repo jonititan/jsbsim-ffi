@@ -43,15 +43,15 @@ fn main() {
         .file("c_wrapper/jsbsim_wrapper.cpp")
         .flag_if_supported("-std=c++17");
 
-    // Use the include paths reported by pkg-config
-    // (e.g. /usr/local/include/JSBSim where FGFDMExec.h and simgear/ live).
+    // Use the include paths reported by pkg-config as *system* includes
+    // (-isystem) so that warnings inside JSBSim's own headers are suppressed.
     for inc in &jsbsim.include_paths {
-        build.include(inc);
+        build.flag(&format!("-isystem{}", inc.display()));
     }
 
-    // Allow an extra include path for non-standard installs.
+    // Allow an extra include path for non-standard installs (also as system).
     if let Ok(extra) = std::env::var("JSBSIM_INCLUDE_DIR") {
-        build.include(&extra);
+        build.flag(&format!("-isystem{}", extra));
     }
 
     build.compile("jsbsim_wrapper");

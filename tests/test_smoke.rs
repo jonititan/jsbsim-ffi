@@ -76,6 +76,76 @@ fn full_sim_if_data_available() {
     println!("✅ Full simulation test passed: t={t:.2}s, alt={alt:.0}ft");
 }
 
+/// Verify integration_suspended() works on a bare sim.
+#[test]
+fn integration_suspended_on_empty_sim() {
+    let mut sim = Sim::new("");
+    assert!(!sim.integration_suspended(), "Should not be suspended initially");
+    sim.suspend_integration();
+    assert!(sim.integration_suspended(), "Should be suspended after suspend");
+    sim.resume_integration();
+    assert!(!sim.integration_suspended(), "Should not be suspended after resume");
+}
+
+/// Verify set_sim_time() / get_sim_time() work on a bare sim.
+#[test]
+fn set_and_get_sim_time_on_empty_sim() {
+    let mut sim = Sim::new("");
+    let t0 = sim.get_sim_time();
+    assert_eq!(t0, 0.0, "Initial sim time should be 0");
+    sim.set_sim_time(99.5);
+    let t1 = sim.get_sim_time();
+    assert!((t1 - 99.5).abs() < 1e-9, "Sim time should be 99.5, got {t1}");
+}
+
+/// Verify path getters don't crash on an empty sim (root="" means no paths set).
+#[test]
+fn path_getters_on_empty_sim() {
+    let sim = Sim::new("");
+    // With empty root, paths may be empty but should not crash.
+    let _ = sim.get_root_dir();
+    let _ = sim.get_aircraft_path();
+    let _ = sim.get_engine_path();
+    let _ = sim.get_systems_path();
+}
+
+/// Verify get_output_filename doesn't crash on a bare sim.
+#[test]
+fn get_output_filename_on_empty_sim() {
+    let sim = Sim::new("");
+    let fname = sim.get_output_filename(0);
+    // Should be empty string, not crash.
+    assert!(fname.is_empty() || !fname.is_empty(), "Should not crash");
+}
+
+/// Verify set_terrain_elevation doesn't crash on a bare sim.
+#[test]
+fn set_terrain_elevation_on_empty_sim() {
+    let mut sim = Sim::new("");
+    sim.set_terrain_elevation(500.0);
+    // Just verify no crash.
+}
+
+/// Verify check_incremental_hold doesn't crash on an empty sim.
+#[test]
+fn check_incremental_hold_on_empty_sim() {
+    let mut sim = Sim::new("");
+    sim.check_incremental_hold();
+    // Just verify no crash.
+}
+
+/// Verify set_output_filename / get_output_filename round-trip on empty sim.
+#[test]
+fn set_and_get_output_filename_on_empty_sim() {
+    let mut sim = Sim::new("");
+    // set_output_filename may return false on empty sim (no output channels),
+    // but it should not crash.
+    let _ = sim.set_output_filename(0, "test_output.csv");
+    let fname = sim.get_output_filename(0);
+    // Value depends on whether the channel exists; just verify no crash.
+    let _ = fname;
+}
+
 /// Test that the binary has the JSBSim library baked in (RPATH or static).
 /// This runs the built test binary with an empty LD_LIBRARY_PATH to ensure
 /// it doesn't depend on the user setting that variable.

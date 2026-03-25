@@ -65,12 +65,74 @@ bool jsbsim_set_aircraft_path(JSBSim_FGFDMExec* fdm, const char* path);
 bool jsbsim_set_engine_path(JSBSim_FGFDMExec* fdm, const char* path);
 bool jsbsim_set_systems_path(JSBSim_FGFDMExec* fdm, const char* path);
 
+/* ── Integration state query ──────────────────────────────────────── */
+bool jsbsim_integration_suspended(JSBSim_FGFDMExec* fdm);
+
+/* ── Simulation time ──────────────────────────────────────────────── */
+void jsbsim_set_sim_time(JSBSim_FGFDMExec* fdm, double time);
+
+/* ── Path getters ─────────────────────────────────────────────────── */
+int jsbsim_get_root_dir(JSBSim_FGFDMExec* fdm, char* buf, int buf_len);
+int jsbsim_get_aircraft_path(JSBSim_FGFDMExec* fdm, char* buf, int buf_len);
+int jsbsim_get_engine_path(JSBSim_FGFDMExec* fdm, char* buf, int buf_len);
+int jsbsim_get_systems_path(JSBSim_FGFDMExec* fdm, char* buf, int buf_len);
+
+/* ── Output filename getter ───────────────────────────────────────── */
+int jsbsim_get_output_filename(JSBSim_FGFDMExec* fdm, int n, char* buf, int buf_len);
+
 /* ── Info / Debug ─────────────────────────────────────────────────── */
 void jsbsim_set_debug_level(JSBSim_FGFDMExec* fdm, int level);
 /*  get_model_name / get_version write into caller-supplied buf and return
     the actual string length.  */
 int  jsbsim_get_model_name(JSBSim_FGFDMExec* fdm, char* buf, int buf_len);
 int  jsbsim_get_version(char* buf, int buf_len);
+
+/* ── Ground callback ──────────────────────────────────────────────── */
+
+/** Function-pointer type for a custom GetAGLevel callback.
+ *
+ *  All vectors are Earth-Centered Earth-Fixed (ECEF), distances in feet.
+ *
+ *  The function must populate the four output arrays and return the
+ *  Above-Ground-Level altitude (ft).
+ *
+ *  @param user_data      Opaque pointer passed through from
+ *                        jsbsim_set_ground_callback().
+ *  @param time           Simulation time (s).
+ *  @param location       [in]  ECEF position of the query point (ft).
+ *  @param contact        [out] ECEF position of the ground contact point (ft).
+ *  @param normal         [out] Unit surface normal at the contact point.
+ *  @param velocity       [out] Linear velocity of the surface (ft/s).
+ *  @param ang_velocity   [out] Angular velocity of the surface (rad/s).
+ *  @return AGL altitude (ft).
+ */
+typedef double (*jsbsim_get_agl_fn_t)(
+    void*        user_data,
+    double       time,
+    const double location[3],
+    double       contact[3],
+    double       normal[3],
+    double       velocity[3],
+    double       ang_velocity[3]
+);
+
+/** Install a custom ground callback.
+ *
+ *  JSBSim takes ownership of the C++ bridge object that wraps @p get_agl.
+ *  @p user_data is forwarded to every invocation; its lifetime must be managed
+ *  by the caller (i.e. it must remain valid until the callback is replaced or
+ *  the FDM is destroyed).
+ */
+void jsbsim_set_ground_callback(JSBSim_FGFDMExec* fdm,
+                                jsbsim_get_agl_fn_t get_agl,
+                                void* user_data);
+
+/** Set the terrain elevation (ft MSL) on the **current** ground callback.
+ *
+ *  Only effective when the default (sphere-earth) ground callback is active,
+ *  or when a custom callback honours SetTerrainElevation().
+ */
+void jsbsim_set_terrain_elevation(JSBSim_FGFDMExec* fdm, double elevation_ft);
 
 #ifdef __cplusplus
 }

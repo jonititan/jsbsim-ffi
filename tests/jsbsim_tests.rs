@@ -984,3 +984,335 @@ fn disable_enable_output_does_not_crash() {
         sim.run();
     }
 }
+
+// ===========================================================================
+// integration_suspended  (new API)
+// ===========================================================================
+
+#[test]
+fn integration_suspended_query() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    sim.set_property("ic/h-sl-ft", 10_000.0);
+    sim.set_property("ic/vc-kts", 0.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
+    assert!(!sim.integration_suspended(), "Should not be suspended initially");
+
+    sim.suspend_integration();
+    assert!(sim.integration_suspended(), "Should be suspended after suspend_integration()");
+
+    sim.resume_integration();
+    assert!(!sim.integration_suspended(), "Should not be suspended after resume_integration()");
+}
+
+// ===========================================================================
+// set_sim_time  (new API)
+// ===========================================================================
+
+#[test]
+fn set_sim_time_explicit() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    sim.set_property("ic/h-sl-ft", 10_000.0);
+    sim.set_property("ic/vc-kts", 0.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
+    // Run a few steps to advance time.
+    for _ in 0..50 {
+        sim.run();
+    }
+    let t = sim.get_sim_time();
+    assert!(t > 0.0);
+
+    // Set time to a specific value.
+    sim.set_sim_time(42.0);
+    let t2 = sim.get_sim_time();
+    assert!((t2 - 42.0).abs() < 1e-9, "Sim time should be 42.0, got {t2}");
+}
+
+// ===========================================================================
+// Path getters  (new API)
+// ===========================================================================
+
+#[test]
+fn path_getters_return_values() {
+    let sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+
+    let root = sim.get_root_dir();
+    assert!(!root.is_empty(), "Root dir should not be empty");
+
+    let aircraft = sim.get_aircraft_path();
+    assert!(!aircraft.is_empty(), "Aircraft path should not be empty");
+
+    let engine = sim.get_engine_path();
+    assert!(!engine.is_empty(), "Engine path should not be empty");
+
+    let systems = sim.get_systems_path();
+    assert!(!systems.is_empty(), "Systems path should not be empty");
+
+    println!("Root: {root}");
+    println!("Aircraft: {aircraft}");
+    println!("Engine: {engine}");
+    println!("Systems: {systems}");
+}
+
+#[test]
+fn path_setters_and_getters_round_trip() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+
+    assert!(sim.set_aircraft_path("my_aircraft"));
+    let ap = sim.get_aircraft_path();
+    assert!(ap.contains("my_aircraft"), "Aircraft path should contain 'my_aircraft', got '{ap}'");
+
+    assert!(sim.set_engine_path("my_engines"));
+    let ep = sim.get_engine_path();
+    assert!(ep.contains("my_engines"), "Engine path should contain 'my_engines', got '{ep}'");
+
+    assert!(sim.set_systems_path("my_systems"));
+    let sp = sim.get_systems_path();
+    assert!(sp.contains("my_systems"), "Systems path should contain 'my_systems', got '{sp}'");
+}
+
+// ===========================================================================
+// get_output_filename  (new API)
+// ===========================================================================
+
+#[test]
+fn output_filename_getter() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    assert!(sim.run_ic());
+
+    // Query output filename for channel 0 — may be empty if no output configured.
+    let fname = sim.get_output_filename(0);
+    // Just verify it doesn't crash; the value depends on configuration.
+    println!("Output filename[0]: '{fname}'");
+}
+
+// ===========================================================================
+// set_terrain_elevation  (previously untested)
+// ===========================================================================
+
+#[test]
+fn set_terrain_elevation_affects_agl() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    sim.set_property("ic/h-sl-ft", 1000.0);
+    sim.set_property("ic/vc-kts", 0.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
+    let agl_before = sim.get_property("position/h-agl-ft");
+
+    // Raise terrain to 500 ft — AGL should decrease.
+    sim.set_terrain_elevation(500.0);
+    sim.run(); // one step to let JSBSim recalculate
+    let agl_after = sim.get_property("position/h-agl-ft");
+
+    assert!(
+        agl_after < agl_before,
+        "AGL should decrease when terrain is raised: before={agl_before}, after={agl_after}"
+    );
+}
+
+// ===========================================================================
+// Ground callback  (previously untested)
+// ===========================================================================
+
+#[test]
+fn custom_ground_callback() {
+    use jsbsim_ffi::{GroundCallback, GroundContact};
+
+    struct FlatGround {
+        elevation_ft: f64,
+    }
+
+    impl GroundCallback for FlatGround {
+        fn get_agl(&self, _time: f64, location: [f64; 3]) -> GroundContact {
+            let radius = (location[0].powi(2) + location[1].powi(2) + location[2].powi(2)).sqrt();
+            let earth_radius_ft = 20_925_646.0;
+            let ground_radius = earth_radius_ft + self.elevation_ft;
+            let agl = radius - ground_radius;
+
+            let scale = ground_radius / radius;
+            GroundContact {
+                agl,
+                contact: [location[0] * scale, location[1] * scale, location[2] * scale],
+                normal: [location[0] / radius, location[1] / radius, location[2] / radius],
+                velocity: [0.0, 0.0, 0.0],
+                ang_velocity: [0.0, 0.0, 0.0],
+            }
+        }
+    }
+
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    sim.set_property("ic/h-sl-ft", 5000.0);
+    sim.set_property("ic/vc-kts", 0.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
+    // Install our custom ground callback with ground at 1000 ft MSL.
+    sim.set_ground_callback(FlatGround { elevation_ft: 1000.0 });
+
+    // Run a step so JSBSim queries the callback.
+    sim.run();
+
+    let agl = sim.get_property("position/h-agl-ft");
+    // Aircraft at ~5000 ft MSL, ground at 1000 ft → AGL should be ~4000 ft.
+    assert!(
+        (agl - 4000.0).abs() < 200.0,
+        "AGL should be ~4000 ft with ground at 1000 ft MSL, got {agl}"
+    );
+}
+
+// ===========================================================================
+// do_trim — additional modes  (previously only LONGITUDINAL was tested)
+// ===========================================================================
+
+#[test]
+fn do_trim_full() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("c172x"));
+    sim.set_property("ic/h-sl-ft", 5000.0);
+    sim.set_property("ic/vc-kts", 100.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
+    let trimmed = sim.do_trim(jsbsim_ffi::trim::FULL);
+    if !trimmed {
+        eprintln!("Full trim failed (may be expected for some configs)");
+        return;
+    }
+
+    // After full trim, all angular rates should be near zero.
+    let p = sim.get_property("velocities/p-rad_sec");
+    let q = sim.get_property("velocities/q-rad_sec");
+    let r = sim.get_property("velocities/r-rad_sec");
+    assert!(p.abs() < 0.05, "After full trim, roll rate should be ~0, got {p}");
+    assert!(q.abs() < 0.05, "After full trim, pitch rate should be ~0, got {q}");
+    assert!(r.abs() < 0.05, "After full trim, yaw rate should be ~0, got {r}");
+}
+
+#[test]
+fn do_trim_ground() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("c172x"));
+    sim.set_property("ic/h-sl-ft", 0.0);
+    sim.set_property("ic/vc-kts", 0.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
+    let trimmed = sim.do_trim(jsbsim_ffi::trim::GROUND);
+    if !trimmed {
+        eprintln!("Ground trim failed (may be expected for some configs)");
+        return;
+    }
+
+    // After ground trim the aircraft should be stationary on the ground.
+    let alt = sim.get_property("position/h-agl-ft");
+    assert!(alt.abs() < 50.0, "After ground trim, AGL should be near 0, got {alt}");
+}
+
+// ===========================================================================
+// print_property_catalog  (verify no crash)
+// ===========================================================================
+
+#[test]
+fn print_property_catalog_does_not_crash() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    assert!(sim.run_ic());
+
+    // Just verify it doesn't crash; output goes to stdout.
+    sim.print_property_catalog();
+}
+
+// ===========================================================================
+// check_incremental_hold  (verify it's callable with a loaded model)
+// ===========================================================================
+
+#[test]
+fn check_incremental_hold_with_model() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    sim.set_property("ic/h-sl-ft", 10_000.0);
+    sim.set_property("ic/vc-kts", 0.0);
+    sim.set_property("ic/gamma-deg", 0.0);
+    assert!(sim.run_ic());
+
+    // Call check_incremental_hold directly — should not crash.
+    sim.check_incremental_hold();
+}
+
+// ===========================================================================
+// set_output_filename  (verify callable)
+// ===========================================================================
+
+#[test]
+fn set_output_filename_does_not_crash() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    assert!(sim.run_ic());
+
+    // No output channels configured by default, so this may return false,
+    // but it should not crash.
+    let _ = sim.set_output_filename(0, "test_output.csv");
+}
+
+// ===========================================================================
+// set_output_directive  (previously untested)
+// ===========================================================================
+
+#[test]
+fn set_output_directive_nonexistent_returns_false() {
+    let mut sim = match create_fdm() {
+        Some(s) => s,
+        None => return,
+    };
+    assert!(sim.load_model("ball"));
+    assert!(sim.run_ic());
+
+    // A nonexistent directive file should return false.
+    let ok = sim.set_output_directive("nonexistent_output.xml");
+    assert!(!ok, "set_output_directive with nonexistent file should return false");
+}

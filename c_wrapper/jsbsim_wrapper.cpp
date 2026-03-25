@@ -2,7 +2,11 @@
 #include <FGFDMExec.h>
 #include <FGJSBBase.h>
 #include <initialization/FGInitialCondition.h>
+#include <input_output/FGGroundCallback.h>
 #include <input_output/FGPropertyManager.h>
+#include <math/FGColumnVector3.h>
+#include <math/FGLocation.h>
+#include <models/FGInertial.h>
 #include <simgear/misc/sg_path.hxx>
 #include <string>
 #include <cstring>
@@ -251,6 +255,69 @@ bool jsbsim_set_systems_path(JSBSim_FGFDMExec* fdm, const char* path) {
     return as_exec(fdm)->SetSystemsPath(SGPath(std::string(path)));
 }
 
+/* ── Integration state query ──────────────────────────────────────── */
+
+bool jsbsim_integration_suspended(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return false;
+    return as_exec(fdm)->IntegrationSuspended();
+}
+
+/* ── Simulation time ──────────────────────────────────────────────── */
+
+void jsbsim_set_sim_time(JSBSim_FGFDMExec* fdm, double time) {
+    if (!fdm) return;
+    as_exec(fdm)->Setsim_time(time);
+}
+
+/* ── Path getters ─────────────────────────────────────────────────── */
+
+int jsbsim_get_root_dir(JSBSim_FGFDMExec* fdm, char* buf, int buf_len) {
+    if (!fdm) {
+        if (buf && buf_len > 0) buf[0] = '\0';
+        return 0;
+    }
+    const std::string path = as_exec(fdm)->GetRootDir().utf8Str();
+    return copy_str(path, buf, buf_len);
+}
+
+int jsbsim_get_aircraft_path(JSBSim_FGFDMExec* fdm, char* buf, int buf_len) {
+    if (!fdm) {
+        if (buf && buf_len > 0) buf[0] = '\0';
+        return 0;
+    }
+    const std::string path = as_exec(fdm)->GetAircraftPath().utf8Str();
+    return copy_str(path, buf, buf_len);
+}
+
+int jsbsim_get_engine_path(JSBSim_FGFDMExec* fdm, char* buf, int buf_len) {
+    if (!fdm) {
+        if (buf && buf_len > 0) buf[0] = '\0';
+        return 0;
+    }
+    const std::string path = as_exec(fdm)->GetEnginePath().utf8Str();
+    return copy_str(path, buf, buf_len);
+}
+
+int jsbsim_get_systems_path(JSBSim_FGFDMExec* fdm, char* buf, int buf_len) {
+    if (!fdm) {
+        if (buf && buf_len > 0) buf[0] = '\0';
+        return 0;
+    }
+    const std::string path = as_exec(fdm)->GetSystemsPath().utf8Str();
+    return copy_str(path, buf, buf_len);
+}
+
+/* ── Output filename getter ───────────────────────────────────────── */
+
+int jsbsim_get_output_filename(JSBSim_FGFDMExec* fdm, int n, char* buf, int buf_len) {
+    if (!fdm) {
+        if (buf && buf_len > 0) buf[0] = '\0';
+        return 0;
+    }
+    const std::string name = as_exec(fdm)->GetOutputFileName(n);
+    return copy_str(name, buf, buf_len);
+}
+
 /* ── Info / Debug ─────────────────────────────────────────────────── */
 
 void jsbsim_set_debug_level(JSBSim_FGFDMExec* fdm, int level) {
@@ -270,6 +337,70 @@ int jsbsim_get_model_name(JSBSim_FGFDMExec* fdm, char* buf, int buf_len) {
 int jsbsim_get_version(char* buf, int buf_len) {
     const std::string& ver = JSBSim::FGJSBBase::GetVersion();
     return copy_str(ver, buf, buf_len);
+}
+
+} // extern "C"
+
+/* ── Ground callback bridge (C++ class, defined outside extern "C") ── */
+
+/// C++ class that inherits FGGroundCallback and delegates to a C function
+/// pointer, enabling Rust (or any C-ABI language) to provide custom terrain.
+class FFIGroundCallback : public JSBSim::FGGroundCallback {
+public:
+    FFIGroundCallback(jsbsim_get_agl_fn_t fn, void* ud)
+        : get_agl_fn(fn), user_data(ud) {}
+
+    double GetAGLevel(double t, const JSBSim::FGLocation& location,
+                      JSBSim::FGLocation& contact,
+                      JSBSim::FGColumnVector3& normal,
+                      JSBSim::FGColumnVector3& v,
+                      JSBSim::FGColumnVector3& w) const override
+    {
+        // Extract ECEF coordinates from the query location.
+        double loc[3] = { location(1), location(2), location(3) };
+        double ct[3], n[3], vel[3], av[3];
+
+        double agl = get_agl_fn(user_data, t, loc, ct, n, vel, av);
+
+        // Reconstruct the contact point.  Copy the input location first so
+        // that the FGLocation carries the correct ellipsoid parameters, then
+        // overwrite with the ECEF values returned by the callback.
+        contact = location;
+        contact(1) = ct[0];
+        contact(2) = ct[1];
+        contact(3) = ct[2];
+
+        normal(1)  = n[0];   normal(2)  = n[1];   normal(3)  = n[2];
+        v(1)       = vel[0]; v(2)       = vel[1]; v(3)       = vel[2];
+        w(1)       = av[0];  w(2)       = av[1];  w(3)       = av[2];
+
+        return agl;
+    }
+
+private:
+    jsbsim_get_agl_fn_t get_agl_fn;
+    void*               user_data;
+};
+
+/* ── Ground callback C entry points ───────────────────────────────── */
+
+extern "C" {
+
+void jsbsim_set_ground_callback(JSBSim_FGFDMExec* fdm,
+                                jsbsim_get_agl_fn_t get_agl,
+                                void* user_data) {
+    if (!fdm || !get_agl) return;
+    auto inertial = as_exec(fdm)->GetInertial();
+    if (!inertial) return;
+    // FGInertial takes ownership via unique_ptr.
+    inertial->SetGroundCallback(new FFIGroundCallback(get_agl, user_data));
+}
+
+void jsbsim_set_terrain_elevation(JSBSim_FGFDMExec* fdm, double elevation_ft) {
+    if (!fdm) return;
+    auto inertial = as_exec(fdm)->GetInertial();
+    if (!inertial) return;
+    inertial->SetTerrainElevation(elevation_ft);
 }
 
 } // extern "C"
