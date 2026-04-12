@@ -66,18 +66,11 @@ fn compute_wind(time_s: f64, altitude_agl_ft: f64) -> (f64, f64, f64) {
 
 // ── Main ────────────────────────────────────────────────────────────────
 
+#[path = "common/mod.rs"]
+mod common;
+
 fn main() {
-    let root = std::env::var("JSBSIM_ROOT").unwrap_or_else(|_| {
-        eprintln!(
-            "JSBSIM_ROOT is not set.  Point it at a directory containing\n\
-             aircraft/, engine/, systems/ subdirectories.\n\
-             \n\
-             Example:\n\
-             \n\
-                 JSBSIM_ROOT=/path/to/jsbsim cargo run --example wind_batch\n"
-        );
-        std::process::exit(1);
-    });
+    let root = common::jsbsim_root_or_exit("wind_batch");
 
     // ── Create sim & load aircraft ──────────────────────────────────────
     let mut sim = Sim::new(&root);

@@ -18,6 +18,9 @@
 use jsbsim_ffi::{trim, Sim};
 use plotters::prelude::*;
 
+#[path = "common/mod.rs"]
+mod common;
+
 const AIRCRAFT: &str = "737";
 const PLOT_PATH: &str = "trim_envelope.svg";
 const ALTITUDE_FT: f64 = 15_000.0;
@@ -30,8 +33,7 @@ const GAMMA_MIN: i32 = -10;
 const GAMMA_MAX: i32 = 10;
 
 fn main() {
-    let root = std::env::var("JSBSIM_ROOT")
-        .expect("JSBSIM_ROOT must be set to a JSBSim data tree (with aircraft/, scripts/, …)");
+    let root = common::jsbsim_root_or_exit("trim_envelope");
 
     let mut sim = Sim::new(&root);
     sim.set_debug_level(0);

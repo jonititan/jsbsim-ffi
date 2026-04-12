@@ -38,6 +38,9 @@ use jsbsim_ffi::Sim;
 use std::io::{stdout, Write};
 use std::time::{Duration, Instant};
 
+#[path = "common/mod.rs"]
+mod common;
+
 // ── Simulation constants ────────────────────────────────────────────────
 const SIM_DT: f64 = 1.0 / 120.0;
 const SIM_STEP_DURATION: Duration = Duration::from_nanos((SIM_DT * 1_000_000_000.0) as u64);
@@ -113,17 +116,7 @@ impl WindState {
 // ── Main ────────────────────────────────────────────────────────────────
 
 fn main() {
-    let jsbsim_root = std::env::var("JSBSIM_ROOT").unwrap_or_else(|_| {
-        eprintln!(
-            "JSBSIM_ROOT is not set.  Point it at a directory containing\n\
-             aircraft/, engine/, systems/ subdirectories.\n\
-             \n\
-             Example:\n\
-             \n\
-                 JSBSIM_ROOT=/path/to/jsbsim cargo run --example wind_fly\n"
-        );
-        std::process::exit(1);
-    });
+    let jsbsim_root = common::jsbsim_root_or_exit("wind_fly");
 
     // ── Create sim & load aircraft ──────────────────────────────────────
     let mut sim = Sim::new(&jsbsim_root);

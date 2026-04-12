@@ -21,6 +21,9 @@
 use jsbsim_ffi::{trim, Sim};
 use plotters::prelude::*;
 
+#[path = "common/mod.rs"]
+mod common;
+
 const AIRCRAFT: &str = "737";
 const N_ANGLES: usize = 50;
 const TV_MIN_DEG: f64 = 0.0;
@@ -41,8 +44,7 @@ struct Condition<'a> {
 }
 
 fn main() {
-    let root = std::env::var("JSBSIM_ROOT")
-        .expect("JSBSIM_ROOT must be set to a JSBSim data tree (with aircraft/, scripts/, …)");
+    let root = common::jsbsim_root_or_exit("thrust_vectoring");
 
     let mut sim = Sim::new(&root);
     sim.set_debug_level(0);

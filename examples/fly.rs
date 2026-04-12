@@ -41,6 +41,9 @@ const AILERON_STEP: f64 = 0.05;
 const RUDDER_STEP: f64 = 0.05;
 const THROTTLE_STEP: f64 = 0.05;
 
+#[path = "common/mod.rs"]
+mod common;
+
 fn clamp(val: f64, min: f64, max: f64) -> f64 {
     val.max(min).min(max)
 }
@@ -49,17 +52,7 @@ fn main() {
     // ── 1. Create FGFDMExec and load model ──────────────────────────────
     // JSBSIM_ROOT must point to a directory containing aircraft/, engine/,
     // systems/ subdirectories (typically the JSBSim source checkout).
-    let jsbsim_root = std::env::var("JSBSIM_ROOT").unwrap_or_else(|_| {
-        eprintln!(
-            "JSBSIM_ROOT is not set.  Point it at a directory containing\n\
-             aircraft/, engine/, systems/ subdirectories.\n\
-             \n\
-             Example:\n\
-             \n\
-                 JSBSIM_ROOT=/path/to/jsbsim cargo run --example fly\n"
-        );
-        std::process::exit(1);
-    });
+    let jsbsim_root = common::jsbsim_root_or_exit("fly");
 
     let mut sim = Sim::new(&jsbsim_root);
 

@@ -1,19 +1,12 @@
 use jsbsim_ffi::Sim;
 
+#[path = "common/mod.rs"]
+mod common;
+
 fn main() {
     // The JSBSim data root must contain aircraft/, engine/, systems/, scripts/.
     // Set JSBSIM_ROOT to point to your JSBSim source checkout or data install.
-    let root = std::env::var("JSBSIM_ROOT").unwrap_or_else(|_| {
-        eprintln!(
-            "JSBSIM_ROOT is not set.  Point it at a directory containing\n\
-             aircraft/, engine/, systems/, and scripts/ subdirectories.\n\
-             \n\
-             Example:\n\
-             \n\
-                 JSBSIM_ROOT=/path/to/jsbsim cargo run --example simple\n"
-        );
-        std::process::exit(1);
-    });
+    let root = common::jsbsim_root_or_exit("simple");
 
     let mut sim = Sim::new(&root);
 

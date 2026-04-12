@@ -9,11 +9,11 @@
 
 use jsbsim_ffi::Sim;
 
+#[path = "common/mod.rs"]
+mod common;
+
 fn main() {
-    let root = std::env::var("JSBSIM_ROOT").unwrap_or_else(|_| {
-        eprintln!("Set JSBSIM_ROOT to the JSBSim data directory.");
-        std::process::exit(1);
-    });
+    let root = common::jsbsim_root_or_exit("simple_flight");
 
     let mut sim = Sim::new(&root);
 

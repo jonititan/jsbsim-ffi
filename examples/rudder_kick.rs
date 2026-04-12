@@ -17,6 +17,9 @@
 use jsbsim_ffi::{trim, Sim};
 use plotters::prelude::*;
 
+#[path = "common/mod.rs"]
+mod common;
+
 const AIRCRAFT: &str = "737";
 const PLOT_PATH: &str = "rudder_kick.svg";
 
@@ -31,8 +34,7 @@ const AILERON_MAX: f64 = 1.0;
 const RUDDER_MAX: f64 = 0.92;
 
 fn main() {
-    let root = std::env::var("JSBSIM_ROOT")
-        .expect("JSBSIM_ROOT must be set to a JSBSim data tree (with aircraft/, scripts/, …)");
+    let root = common::jsbsim_root_or_exit("rudder_kick");
 
     let mut sim = Sim::new(&root);
     sim.set_debug_level(0);

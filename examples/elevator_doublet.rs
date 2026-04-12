@@ -28,6 +28,9 @@
 use jsbsim_ffi::{trim, Sim};
 use plotters::prelude::*;
 
+#[path = "common/mod.rs"]
+mod common;
+
 const AIRCRAFT: &str = "global5000";
 const PLOT_PATH: &str = "elevator_doublet.svg";
 const FUEL_MAX_LBS: f64 = 8097.63;
@@ -49,8 +52,7 @@ fn doublet_offset(t: f64) -> f64 {
 }
 
 fn main() {
-    let root = std::env::var("JSBSIM_ROOT")
-        .expect("JSBSIM_ROOT must be set to a JSBSim data tree (with aircraft/, scripts/, …)");
+    let root = common::jsbsim_root_or_exit("elevator_doublet");
 
     let mut sim = Sim::new(&root);
     sim.set_debug_level(0);

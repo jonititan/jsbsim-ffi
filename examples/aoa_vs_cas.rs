@@ -17,6 +17,9 @@
 use jsbsim_ffi::{trim, Sim};
 use plotters::prelude::*;
 
+#[path = "common/mod.rs"]
+mod common;
+
 const AIRCRAFT: &str = "global5000";
 const PLOT_PATH: &str = "aoa_vs_cas.svg";
 
@@ -35,8 +38,7 @@ const CAS_MAX: i32 = 550;
 const CAS_STEP: i32 = 10;
 
 fn main() {
-    let root = std::env::var("JSBSIM_ROOT")
-        .expect("JSBSIM_ROOT must be set to a JSBSim data tree (with aircraft/, scripts/, …)");
+    let root = common::jsbsim_root_or_exit("aoa_vs_cas");
 
     let mut sim = Sim::new(&root);
     sim.set_debug_level(0);
