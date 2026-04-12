@@ -1,6 +1,6 @@
 [package]
 name = "jsbsim-ffi"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/jonititan/jsbsim-ffi"
@@ -11,6 +11,10 @@ description = "A wrapper around the C++ JSBSim library to allow its use in rust"
 
 [dev-dependencies]
 crossterm = "0.28"
+# SVG plotting for the analysis examples (ports of JSBSim's Python notebooks).
+# Default features off + only `svg_backend` keeps the dep tree small and
+# avoids the font_kit / freetype native pull-in.
+plotters = { version = "0.3", default-features = false, features = ["svg_backend", "line_series", "point_series", "all_elements"] }
 
 [build-dependencies]
 cc = "1.1"

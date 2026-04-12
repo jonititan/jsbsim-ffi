@@ -1,3 +1,30 @@
+# ── Rust / Cargo ──────────────────────────────────────────────────
 /target
+# Library crate: do not commit Cargo.lock (only binary crates should).
+Cargo.lock
 
+# ── JSBSim runtime output ─────────────────────────────────────────
+# Output channels (CSV is the JSBSim default), Scilab linearization
+# state-space exports from DoLinearization(), and any *_lin.* artefact.
 *.csv
+*.sce
+*_lin.txt
+
+# ── Plot artefacts written by the analysis examples ──────────────
+# (aoa_vs_cas.svg, rudder_kick.svg, thrust_vectoring_*.svg,
+#  trim_envelope.svg, elevator_doublet.svg)
+*.svg
+
+# ── MemPalace local state (per-developer, do not commit) ──────────
+mempalace.yaml
+entities.json
+
+# ── Editor / OS noise ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+plan.md

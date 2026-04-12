@@ -69,7 +69,7 @@ struct WindState {
 impl WindState {
     fn new() -> Self {
         Self {
-            base_speed_fps: 20.0, // ~12 kts
+            base_speed_fps: 20.0,      // ~12 kts
             from_direction_deg: 270.0, // from the west
             turbulence_on: true,
         }
@@ -100,9 +100,7 @@ impl WindState {
                 * (0.6 * (0.37 * time_s + 0.5).sin()
                     + 0.4 * (0.89 * time_s + 1.7).sin()
                     + 0.3 * (2.17 * time_s + 3.1).sin());
-            let td = a
-                * 0.3
-                * (0.5 * (0.43 * time_s).sin() + 0.5 * (1.21 * time_s + 0.8).sin());
+            let td = a * 0.3 * (0.5 * (0.43 * time_s).sin() + 0.5 * (1.21 * time_s + 0.8).sin());
             (tn, te, td)
         } else {
             (0.0, 0.0, 0.0)
@@ -246,10 +244,7 @@ fn main() {
         sim.set_property("fcs/elevator-cmd-norm", elevator);
         sim.set_property("fcs/aileron-cmd-norm", aileron);
         sim.set_property("fcs/rudder-cmd-norm", rudder);
-        sim.set_property(
-            "fcs/center-brake-cmd-norm",
-            if brake { 1.0 } else { 0.0 },
-        );
+        sim.set_property("fcs/center-brake-cmd-norm", if brake { 1.0 } else { 0.0 });
 
         // ── (c) Compute and inject wind ─────────────────────────────────
         let time = sim.get_sim_time();
@@ -265,7 +260,7 @@ fn main() {
         step_count += 1;
 
         // ── (e) Display ─────────────────────────────────────────────────
-        if step_count % DISPLAY_EVERY_N_STEPS == 0 {
+        if step_count.is_multiple_of(DISPLAY_EVERY_N_STEPS) {
             let alt_msl = sim.get_property("position/h-sl-ft");
             let ias = sim.get_property("velocities/vc-kts");
             let vsi = sim.get_property("velocities/h-dot-fps") * 60.0;
@@ -293,27 +288,110 @@ fn main() {
 
             execute!(out, cursor::MoveTo(0, 4)).ok();
 
-            write!(out, "  ┌─────────────── Flight Instruments ───────────────┐\r\n").ok();
-            write!(out, "  │  Time: {:>7.1}s         Mach: {:.3}              │\r\n", time, mach).ok();
-            write!(out, "  │  IAS:  {:>7.1} kts      TAS:  {:>6.1} kts        │\r\n", ias, tas).ok();
-            write!(out, "  │  GS:   {:>7.1} kts      RPM:  {:.0}           │\r\n", gs_kts, rpm).ok();
-            write!(out, "  │  ALT:  {:>7.0} ft MSL   VSI:  {:>+7.0} fpm       │\r\n", alt_msl, vsi).ok();
-            write!(out, "  │  AGL:  {:>7.0} ft        HDG:  {:>5.1}°           │\r\n", alt_agl, hdg).ok();
-            write!(out, "  │  Pitch: {:>+6.1}°  Roll: {:>+6.1}°               │\r\n", pitch, roll).ok();
-            write!(out, "  │  Lat: {:>9.4}°   Lon: {:>10.4}°           │\r\n", lat, lon).ok();
-            write!(out, "  ├─────────────── Wind Field ───────────────────────┤\r\n").ok();
-            write!(out, "  │  Base:  {:>5.1} fps ({:>5.1} kts)  from {:>5.1}°      │\r\n",
-                wind.base_speed_fps, wind.base_speed_fps * 0.592_484, wind.from_direction_deg).ok();
-            write!(out, "  │  Total: {:>5.1} fps ({:>5.1} kts)  Turb: {}       │\r\n",
-                tw_mag, tw_mag_kts, if wind.turbulence_on { " ON" } else { "OFF" }).ok();
-            write!(out, "  │  Wn: {:>+6.1}  We: {:>+6.1}  Wd: {:>+6.1} fps     │\r\n", tw_n, tw_e, tw_d).ok();
-            write!(out, "  ├─────────────── Controls ─────────────────────────┤\r\n").ok();
-            write!(out, "  │  Throttle: {:<4.0}%   Elevator: {:>+5.2}             │\r\n", throttle * 100.0, elevator).ok();
-            write!(out, "  │  Aileron:  {:>+5.2}    Rudder:   {:>+5.2}             │\r\n", aileron, rudder).ok();
-            write!(out, "  │  Gear: {}    Brake: {}                      │\r\n",
+            write!(
+                out,
+                "  ┌─────────────── Flight Instruments ───────────────┐\r\n"
+            )
+            .ok();
+            write!(
+                out,
+                "  │  Time: {:>7.1}s         Mach: {:.3}              │\r\n",
+                time, mach
+            )
+            .ok();
+            write!(
+                out,
+                "  │  IAS:  {:>7.1} kts      TAS:  {:>6.1} kts        │\r\n",
+                ias, tas
+            )
+            .ok();
+            write!(
+                out,
+                "  │  GS:   {:>7.1} kts      RPM:  {:.0}           │\r\n",
+                gs_kts, rpm
+            )
+            .ok();
+            write!(
+                out,
+                "  │  ALT:  {:>7.0} ft MSL   VSI:  {:>+7.0} fpm       │\r\n",
+                alt_msl, vsi
+            )
+            .ok();
+            write!(
+                out,
+                "  │  AGL:  {:>7.0} ft        HDG:  {:>5.1}°           │\r\n",
+                alt_agl, hdg
+            )
+            .ok();
+            write!(
+                out,
+                "  │  Pitch: {:>+6.1}°  Roll: {:>+6.1}°               │\r\n",
+                pitch, roll
+            )
+            .ok();
+            write!(
+                out,
+                "  │  Lat: {:>9.4}°   Lon: {:>10.4}°           │\r\n",
+                lat, lon
+            )
+            .ok();
+            write!(
+                out,
+                "  ├─────────────── Wind Field ───────────────────────┤\r\n"
+            )
+            .ok();
+            write!(
+                out,
+                "  │  Base:  {:>5.1} fps ({:>5.1} kts)  from {:>5.1}°      │\r\n",
+                wind.base_speed_fps,
+                wind.base_speed_fps * 0.592_484,
+                wind.from_direction_deg
+            )
+            .ok();
+            write!(
+                out,
+                "  │  Total: {:>5.1} fps ({:>5.1} kts)  Turb: {}       │\r\n",
+                tw_mag,
+                tw_mag_kts,
+                if wind.turbulence_on { " ON" } else { "OFF" }
+            )
+            .ok();
+            write!(
+                out,
+                "  │  Wn: {:>+6.1}  We: {:>+6.1}  Wd: {:>+6.1} fps     │\r\n",
+                tw_n, tw_e, tw_d
+            )
+            .ok();
+            write!(
+                out,
+                "  ├─────────────── Controls ─────────────────────────┤\r\n"
+            )
+            .ok();
+            write!(
+                out,
+                "  │  Throttle: {:<4.0}%   Elevator: {:>+5.2}             │\r\n",
+                throttle * 100.0,
+                elevator
+            )
+            .ok();
+            write!(
+                out,
+                "  │  Aileron:  {:>+5.2}    Rudder:   {:>+5.2}             │\r\n",
+                aileron, rudder
+            )
+            .ok();
+            write!(
+                out,
+                "  │  Gear: {}    Brake: {}                      │\r\n",
                 if gear > 0.5 { "DOWN" } else { " UP " },
-                if brake { " ON" } else { "OFF" }).ok();
-            write!(out, "  └─────────────────────────────────────────────────┘\r\n").ok();
+                if brake { " ON" } else { "OFF" }
+            )
+            .ok();
+            write!(
+                out,
+                "  └─────────────────────────────────────────────────┘\r\n"
+            )
+            .ok();
             out.flush().ok();
 
             if alt_agl < 0.0 {

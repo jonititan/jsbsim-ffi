@@ -40,7 +40,10 @@ fn main() {
     let print_interval = 10.0; // print every 10 seconds
     let mut next_print = 0.0;
 
-    println!("{:<10} {:<12} {:<12} {:<12}", "Time(s)", "Alt(ft)", "Vc(kts)", "Gamma(deg)");
+    println!(
+        "{:<10} {:<12} {:<12} {:<12}",
+        "Time(s)", "Alt(ft)", "Vc(kts)", "Gamma(deg)"
+    );
     println!("{}", "-".repeat(48));
 
     while sim.get_sim_time() <= end_time {
@@ -57,9 +60,9 @@ fn main() {
         }
     }
 
-    println!("\nSimulation complete.  Final time: {:.1}s", sim.get_sim_time());
     println!(
-        "dt = {dt:.4}s  ({:.0} steps)",
-        sim.get_sim_time() / dt
+        "\nSimulation complete.  Final time: {:.1}s",
+        sim.get_sim_time()
     );
+    println!("dt = {dt:.4}s  ({:.0} steps)", sim.get_sim_time() / dt);
 }

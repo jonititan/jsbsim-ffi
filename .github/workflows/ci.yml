@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # All paths are pinned to /home/runner because GitHub-hosted ubuntu
+  # runners always run jobs as the `runner` user with that HOME.
+  JSBSIM_INSTALL: /home/runner/jsbsim-install
+  JSBSIM_SRC: /home/runner/jsbsim-src
+  PKG_CONFIG_PATH: /home/runner/jsbsim-install/lib/pkgconfig
+  LD_LIBRARY_PATH: /home/runner/jsbsim-install/lib
+
+jobs:
+  test:
+    name: Build, lint, and test against JSBSim master
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout jsbsim-ffi
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential pkg-config
+
+      # ── JSBSim discovery & cache ────────────────────────────────────
+      #
+      # Resolve the current master SHA up-front so the cache key tracks
+      # the exact JSBSim revision we'll build against.  This gives a
+      # natural cache invalidation: when JSBSim master moves, the next
+      # CI run rebuilds JSBSim once and caches the new install tree.
+      - name: Resolve JSBSim master SHA
+        id: jsbsim-sha
+        run: |
+          SHA=$(git ls-remote https://github.com/JSBSim-Team/jsbsim.git refs/heads/master | cut -f1)
+          echo "sha=${SHA}"          >> "$GITHUB_OUTPUT"
+          echo "short=${SHA:0:12}"   >> "$GITHUB_OUTPUT"
+
+      - name: Cache JSBSim install tree
+        id: cache-jsbsim
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.JSBSIM_INSTALL }}
+          key: jsbsim-install-${{ runner.os }}-${{ steps.jsbsim-sha.outputs.short }}-v1
+
+      # The JSBSim source tree is cloned every run because the integration
+      # tests need it as a data root (aircraft/, scripts/, engine/,
+      # systems/) and a shallow clone is fast.
+      - name: Clone JSBSim source (data tree for tests)
+        run: |
+          git clone https://github.com/JSBSim-Team/jsbsim.git "$JSBSIM_SRC"
+          cd "$JSBSIM_SRC"
+          git checkout ${{ steps.jsbsim-sha.outputs.sha }}
+
+      - name: Build & install JSBSim (cache miss only)
+        if: steps.cache-jsbsim.outputs.cache-hit != 'true'
+        run: |
+          cd "$JSBSIM_SRC"
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DCMAKE_INSTALL_PREFIX="$JSBSIM_INSTALL"
+          cmake --build build --parallel "$(nproc)"
+          cmake --install build
+
+      - name: Verify pkg-config sees JSBSim
+        run: pkg-config --modversion JSBSim
+
+      # ── Rust toolchain & cargo cache ────────────────────────────────
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry, git db, and target dir
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      # ── Lint ─────────────────────────────────────────────────────────
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      # ── Build & test ────────────────────────────────────────────────
+      - name: cargo build (lib + examples + tests)
+        run: cargo build --verbose --all-targets
+
+      - name: cargo test
+        env:
+          # Integration tests in tests/jsbsim_tests.rs hard-fail unless
+          # JSBSIM_ROOT points at a real JSBSim data tree (one with an
+          # `aircraft/` subdirectory).  We point it at the freshly
+          # cloned source.
+          JSBSIM_ROOT: ${{ env.JSBSIM_SRC }}
+        # JSBSim's C++ internals are not thread-safe — concurrent FDM
+        # instances will crash.  Always single-threaded.
+        run: cargo test --verbose -- --test-threads=1

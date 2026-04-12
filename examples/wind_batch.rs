@@ -58,9 +58,8 @@ fn compute_wind(time_s: f64, altitude_agl_ft: f64) -> (f64, f64, f64) {
         * (0.6 * (0.37 * time_s + 0.5).sin()
             + 0.4 * (0.91 * time_s + 1.7).sin()
             + 0.3 * (2.13 * time_s + 3.1).sin());
-    let turb_d = turb_amplitude
-        * 0.4
-        * (0.5 * (0.41 * time_s).sin() + 0.5 * (1.17 * time_s + 0.8).sin());
+    let turb_d =
+        turb_amplitude * 0.4 * (0.5 * (0.41 * time_s).sin() + 0.5 * (1.17 * time_s + 0.8).sin());
 
     (wind_north + turb_n, wind_east + turb_e, turb_d)
 }
@@ -113,8 +112,16 @@ fn main() {
     println!("=========================================");
     println!(
         "{:>7}  {:>7}  {:>7}  {:>8}  {:>8}  {:>8}  {:>7}  {:>7}  {:>7}  {:>6}",
-        "Time(s)", "Alt(ft)", "IAS(kt)", "Hdg(°)", "GS(kt)", "TAS(kt)",
-        "Wn(fps)", "We(fps)", "Wd(fps)", "Wmag"
+        "Time(s)",
+        "Alt(ft)",
+        "IAS(kt)",
+        "Hdg(°)",
+        "GS(kt)",
+        "TAS(kt)",
+        "Wn(fps)",
+        "We(fps)",
+        "Wd(fps)",
+        "Wmag"
     );
     println!("{}", "-".repeat(95));
 
@@ -158,5 +165,8 @@ fn main() {
     }
 
     println!("{}", "-".repeat(95));
-    println!("Simulation complete. Wind was updated every timestep ({} steps).", total_steps);
+    println!(
+        "Simulation complete. Wind was updated every timestep ({} steps).",
+        total_steps
+    );
 }

@@ -33,11 +33,14 @@ fn main() {
         sim.run();
 
         if step % 400 == 0 {
-            let t   = sim.get_property("simulation/sim-time-sec");
+            let t = sim.get_property("simulation/sim-time-sec");
             let alt = sim.get_property("position/h-agl-ft");
             let ias = sim.get_property("velocities/vc-kts");
 
-            println!("t={:.1}s → Altitude: {:.0} ft | IAS: {:.1} kts", t, alt, ias);
+            println!(
+                "t={:.1}s → Altitude: {:.0} ft | IAS: {:.1} kts",
+                t, alt, ias
+            );
         }
     }
 }

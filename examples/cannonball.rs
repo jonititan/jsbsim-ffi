@@ -70,10 +70,7 @@ fn main() {
         }
 
         if t >= next_print {
-            println!(
-                "{:<10.2} {:<14.1} {:<14.2} {:<14.1}",
-                t, alt, dist_nm, vc
-            );
+            println!("{:<10.2} {:<14.1} {:<14.2} {:<14.1}", t, alt, dist_nm, vc);
             next_print += print_interval;
         }
 
@@ -103,5 +100,8 @@ fn main() {
     let final_lat = sim.get_property("position/lat-gc-deg");
     let final_lon = sim.get_property("position/long-gc-deg");
     let range_nm = ((final_lat * 60.0).powi(2) + (final_lon * 60.0).powi(2)).sqrt();
-    println!("Range       : {range_nm:.1} nm ({:.0} m)", range_nm * 1852.0);
+    println!(
+        "Range       : {range_nm:.1} nm ({:.0} m)",
+        range_nm * 1852.0
+    );
 }

@@ -7,6 +7,7 @@
 #include <math/FGColumnVector3.h>
 #include <math/FGLocation.h>
 #include <models/FGInertial.h>
+#include <models/FGPropulsion.h>
 #include <simgear/misc/sg_path.hxx>
 #include <string>
 #include <cstring>
@@ -62,6 +63,30 @@ bool jsbsim_load_script(JSBSim_FGFDMExec* fdm, const char* filename) {
     if (!fdm || !filename || !*filename) return false;
     try {
         return as_exec(fdm)->LoadScript(SGPath(std::string(filename)));
+    } catch (...) {
+        return false;
+    }
+}
+
+bool jsbsim_load_script_ex(JSBSim_FGFDMExec* fdm, const char* filename,
+                           double dt, const char* initfile) {
+    if (!fdm || !filename || !*filename) return false;
+    try {
+        SGPath script = SGPath(std::string(filename));
+        SGPath ic = (initfile && *initfile) ? SGPath(std::string(initfile))
+                                            : SGPath();
+        return as_exec(fdm)->LoadScript(script, dt, ic);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool jsbsim_load_planet(JSBSim_FGFDMExec* fdm, const char* filename,
+                        bool use_aircraft_path) {
+    if (!fdm || !filename || !*filename) return false;
+    try {
+        return as_exec(fdm)->LoadPlanet(SGPath(std::string(filename)),
+                                        use_aircraft_path);
     } catch (...) {
         return false;
     }
@@ -171,6 +196,141 @@ bool jsbsim_do_trim(JSBSim_FGFDMExec* fdm, int mode) {
     }
 }
 
+bool jsbsim_do_linearization(JSBSim_FGFDMExec* fdm, int mode) {
+    if (!fdm) return false;
+    // DoLinearization dereferences subsystem pointers that are only populated
+    // once a model has been loaded.  Guard against a SIGSEGV on a bare sim by
+    // refusing to call through when no model name has been set.
+    if (as_exec(fdm)->GetModelName().empty()) return false;
+    try {
+        as_exec(fdm)->DoLinearization(mode);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+int jsbsim_get_propulsion_tank_report(JSBSim_FGFDMExec* fdm,
+                                      char* buf, int buf_len) {
+    if (!fdm) {
+        if (buf && buf_len > 0) buf[0] = '\0';
+        return 0;
+    }
+    try {
+        std::string report = as_exec(fdm)->GetPropulsionTankReport();
+        return copy_str(report, buf, buf_len);
+    } catch (...) {
+        if (buf && buf_len > 0) buf[0] = '\0';
+        return 0;
+    }
+}
+
+int jsbsim_get_random_seed(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return 0;
+    return as_exec(fdm)->SRand();
+}
+
+int jsbsim_get_fdm_count(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return 0;
+    return static_cast<int>(as_exec(fdm)->GetFDMCount());
+}
+
+int jsbsim_enumerate_fdms_count(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return 0;
+    try {
+        return static_cast<int>(as_exec(fdm)->EnumerateFDMs().size());
+    } catch (...) {
+        return 0;
+    }
+}
+
+int jsbsim_enumerate_fdms_name(JSBSim_FGFDMExec* fdm, int i,
+                               char* buf, int buf_len) {
+    if (!fdm || i < 0) {
+        if (buf && buf_len > 0) buf[0] = '\0';
+        return 0;
+    }
+    try {
+        auto list = as_exec(fdm)->EnumerateFDMs();
+        if (static_cast<size_t>(i) >= list.size()) {
+            if (buf && buf_len > 0) buf[0] = '\0';
+            return 0;
+        }
+        return copy_str(list[i], buf, buf_len);
+    } catch (...) {
+        if (buf && buf_len > 0) buf[0] = '\0';
+        return 0;
+    }
+}
+
+void jsbsim_set_child(JSBSim_FGFDMExec* fdm, bool is_child) {
+    if (!fdm) return;
+    as_exec(fdm)->SetChild(is_child);
+}
+
+/* ── Propulsion helpers ──────────────────────────────────────────── */
+
+int jsbsim_get_num_engines(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return 0;
+    auto prop = as_exec(fdm)->GetPropulsion();
+    if (!prop) return 0;
+    return static_cast<int>(prop->GetNumEngines());
+}
+
+int jsbsim_get_num_tanks(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return 0;
+    auto prop = as_exec(fdm)->GetPropulsion();
+    if (!prop) return 0;
+    return static_cast<int>(prop->GetNumTanks());
+}
+
+bool jsbsim_init_running(JSBSim_FGFDMExec* fdm, int n) {
+    if (!fdm) return false;
+    // InitRunning dereferences Engine pointers that are only populated
+    // after LoadModel — guard against bare-sim SIGSEGV.
+    if (as_exec(fdm)->GetModelName().empty()) return false;
+    auto prop = as_exec(fdm)->GetPropulsion();
+    if (!prop) return false;
+    try {
+        prop->InitRunning(n);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+bool jsbsim_propulsion_get_steady_state(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return false;
+    if (as_exec(fdm)->GetModelName().empty()) return false;
+    auto prop = as_exec(fdm)->GetPropulsion();
+    if (!prop) return false;
+    try {
+        return prop->GetSteadyState();
+    } catch (...) {
+        return false;
+    }
+}
+
+void jsbsim_set_trim_status(JSBSim_FGFDMExec* fdm, bool status) {
+    if (!fdm) return;
+    as_exec(fdm)->SetTrimStatus(status);
+}
+
+bool jsbsim_get_trim_status(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return false;
+    return as_exec(fdm)->GetTrimStatus();
+}
+
+void jsbsim_set_trim_mode(JSBSim_FGFDMExec* fdm, int mode) {
+    if (!fdm) return;
+    as_exec(fdm)->SetTrimMode(mode);
+}
+
+int jsbsim_get_trim_mode(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return 0;
+    return as_exec(fdm)->GetTrimMode();
+}
+
 /* ── Properties ───────────────────────────────────────────────────── */
 
 double jsbsim_get_property(JSBSim_FGFDMExec* fdm, const char* name) {
@@ -208,6 +368,41 @@ void jsbsim_print_property_catalog(JSBSim_FGFDMExec* fdm) {
     as_exec(fdm)->PrintPropertyCatalog();
 }
 
+void jsbsim_print_simulation_configuration(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return;
+    try {
+        as_exec(fdm)->PrintSimulationConfiguration();
+    } catch (...) {}
+}
+
+int jsbsim_get_property_catalog_size(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return 0;
+    try {
+        return static_cast<int>(as_exec(fdm)->GetPropertyCatalog().size());
+    } catch (...) {
+        return 0;
+    }
+}
+
+int jsbsim_get_property_catalog_entry(JSBSim_FGFDMExec* fdm, int i,
+                                      char* buf, int buf_len) {
+    if (!fdm || i < 0) {
+        if (buf && buf_len > 0) buf[0] = '\0';
+        return 0;
+    }
+    try {
+        auto& cat = as_exec(fdm)->GetPropertyCatalog();
+        if (static_cast<size_t>(i) >= cat.size()) {
+            if (buf && buf_len > 0) buf[0] = '\0';
+            return 0;
+        }
+        return copy_str(cat[i], buf, buf_len);
+    } catch (...) {
+        if (buf && buf_len > 0) buf[0] = '\0';
+        return 0;
+    }
+}
+
 /* ── Output control ───────────────────────────────────────────────── */
 
 bool jsbsim_set_output_directive(JSBSim_FGFDMExec* fdm, const char* fname) {
@@ -217,6 +412,20 @@ bool jsbsim_set_output_directive(JSBSim_FGFDMExec* fdm, const char* fname) {
     } catch (...) {
         return false;
     }
+}
+
+void jsbsim_force_output(JSBSim_FGFDMExec* fdm, int idx) {
+    if (!fdm) return;
+    try {
+        as_exec(fdm)->ForceOutput(idx);
+    } catch (...) {}
+}
+
+void jsbsim_set_logging_rate(JSBSim_FGFDMExec* fdm, double rate_hz) {
+    if (!fdm) return;
+    try {
+        as_exec(fdm)->SetLoggingRate(rate_hz);
+    } catch (...) {}
 }
 
 void jsbsim_enable_output(JSBSim_FGFDMExec* fdm) {
@@ -255,6 +464,11 @@ bool jsbsim_set_systems_path(JSBSim_FGFDMExec* fdm, const char* path) {
     return as_exec(fdm)->SetSystemsPath(SGPath(std::string(path)));
 }
 
+bool jsbsim_set_output_path(JSBSim_FGFDMExec* fdm, const char* path) {
+    if (!fdm || !path) return false;
+    return as_exec(fdm)->SetOutputPath(SGPath(std::string(path)));
+}
+
 /* ── Integration state query ──────────────────────────────────────── */
 
 bool jsbsim_integration_suspended(JSBSim_FGFDMExec* fdm) {
@@ -267,6 +481,33 @@ bool jsbsim_integration_suspended(JSBSim_FGFDMExec* fdm) {
 void jsbsim_set_sim_time(JSBSim_FGFDMExec* fdm, double time) {
     if (!fdm) return;
     as_exec(fdm)->Setsim_time(time);
+}
+
+double jsbsim_incr_time(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return 0.0;
+    return as_exec(fdm)->IncrTime();
+}
+
+unsigned int jsbsim_get_frame(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return 0;
+    return as_exec(fdm)->GetFrame();
+}
+
+int jsbsim_get_debug_level(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return 0;
+    return as_exec(fdm)->GetDebugLevel();
+}
+
+void jsbsim_set_hold_down(JSBSim_FGFDMExec* fdm, bool hold_down) {
+    if (!fdm) return;
+    try {
+        as_exec(fdm)->SetHoldDown(hold_down);
+    } catch (...) {}
+}
+
+bool jsbsim_get_hold_down(JSBSim_FGFDMExec* fdm) {
+    if (!fdm) return false;
+    return as_exec(fdm)->GetHoldDown();
 }
 
 /* ── Path getters ─────────────────────────────────────────────────── */
@@ -304,6 +545,24 @@ int jsbsim_get_systems_path(JSBSim_FGFDMExec* fdm, char* buf, int buf_len) {
         return 0;
     }
     const std::string path = as_exec(fdm)->GetSystemsPath().utf8Str();
+    return copy_str(path, buf, buf_len);
+}
+
+int jsbsim_get_output_path(JSBSim_FGFDMExec* fdm, char* buf, int buf_len) {
+    if (!fdm) {
+        if (buf && buf_len > 0) buf[0] = '\0';
+        return 0;
+    }
+    const std::string path = as_exec(fdm)->GetOutputPath().utf8Str();
+    return copy_str(path, buf, buf_len);
+}
+
+int jsbsim_get_full_aircraft_path(JSBSim_FGFDMExec* fdm, char* buf, int buf_len) {
+    if (!fdm) {
+        if (buf && buf_len > 0) buf[0] = '\0';
+        return 0;
+    }
+    const std::string path = as_exec(fdm)->GetFullAircraftPath().utf8Str();
     return copy_str(path, buf, buf_len);
 }
 

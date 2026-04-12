@@ -23,8 +23,6 @@ fn main() {
         format!("{}/scripts/c1721.xml", root)
     };
 
-    
-
     let mut sim = Sim::new(&root);
 
     println!("Loading script: {script_path}");
@@ -72,8 +70,5 @@ fn main() {
         }
     }
 
-    println!(
-        "\nScript finished at t = {:.2}s",
-        sim.get_sim_time()
-    );
+    println!("\nScript finished at t = {:.2}s", sim.get_sim_time());
 }
