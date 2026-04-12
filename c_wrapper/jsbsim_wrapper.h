@@ -55,6 +55,21 @@ void jsbsim_destroy(JSBSim_FGFDMExec* fdm);
  */
 bool jsbsim_load_model(JSBSim_FGFDMExec* fdm, const char* model);
 
+/** Load an aircraft model and re-target the aircraft, engine, and systems
+ *  search paths in a single call.
+ *
+ *  **C++ origin:** the 5-arg overload of
+ *  `FGFDMExec::LoadModel(SGPath aircraft, SGPath engines, SGPath systems,
+ *                        const string& model, bool addModelToPath = true)`
+ *  — [`src/FGFDMExec.h`](https://github.com/JSBSim-Team/jsbsim/blob/master/src/FGFDMExec.h)
+ */
+bool jsbsim_load_model_ex(JSBSim_FGFDMExec* fdm,
+                          const char* aircraft_path,
+                          const char* engine_path,
+                          const char* systems_path,
+                          const char* model,
+                          bool add_model_to_path);
+
 /** Load a JSBSim XML script file.
  *
  *  **C++ origin:** `FGFDMExec::LoadScript(const SGPath& Script, double deltaT, const SGPath& initfile)`
@@ -465,6 +480,17 @@ bool jsbsim_set_systems_path(JSBSim_FGFDMExec* fdm, const char* path);
  *  — [`src/FGFDMExec.h`](https://github.com/JSBSim-Team/jsbsim/blob/master/src/FGFDMExec.h)
  */
 bool jsbsim_set_output_path(JSBSim_FGFDMExec* fdm, const char* path);
+
+/** Set the root directory used to resolve relative paths.
+ *
+ *  Note: SetRootDir does NOT update the aircraft / engine / systems
+ *  / output paths — call the corresponding setters separately if you
+ *  need them re-rooted as well.
+ *
+ *  **C++ origin:** `FGFDMExec::SetRootDir(const SGPath& rootDir)`
+ *  — [`src/FGFDMExec.h`](https://github.com/JSBSim-Team/jsbsim/blob/master/src/FGFDMExec.h)
+ */
+void jsbsim_set_root_dir(JSBSim_FGFDMExec* fdm, const char* path);
 
 /* ── Integration state query ──────────────────────────────────────── */
 

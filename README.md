@@ -46,6 +46,7 @@ let alt = sim.get_property("position/h-sl-ft"); // read properties
 | **Lifecycle** | `Sim::new(root_dir)` | Create FDM instance |
 | | `Sim::get_version()` | JSBSim version string |
 | **Loading** | `load_model(name)` | Load aircraft (e.g. `"c172x"`) |
+| | `load_model_with(aircraft, engine, systems, name, add_to_path)` | Load + re-target all three search paths in one call |
 | | `load_script(path)` | Load scenario script |
 | | `load_script_with(path, dt, initfile)` | Script with dt / IC override |
 | | `load_planet(path, use_aircraft_path)` | Load planet definition XML |
@@ -86,7 +87,7 @@ let alt = sim.get_property("position/h-sl-ft"); // read properties
 | | `set_systems_path(p)` / `get_systems_path()` | Set/get systems search path |
 | | `set_output_path(p)` / `get_output_path()` | Set/get output directory |
 | | `get_full_aircraft_path()` | Fully resolved path to loaded model |
-| | `get_root_dir()` | Get the root directory |
+| | `set_root_dir(p)` / `get_root_dir()` | Set/get the root directory |
 | **Debug** | `set_debug_level(n)` / `get_debug_level()` | 0=silent, higher=verbose |
 | | `get_model_name()` | Name of loaded aircraft |
 | | `get_random_seed()` | Current random seed |

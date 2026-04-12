@@ -114,24 +114,38 @@ fn set_and_get_sim_time_on_empty_sim() {
     );
 }
 
-/// Verify path getters don't crash on an empty sim (root="" means no paths set).
+/// Path getters on a bare sim must return owned `String`s without
+/// crashing.  Their concrete contents depend on JSBSim's defaults — what
+/// matters here is that the FFI string-marshalling round-trips cleanly
+/// for every getter.  The values are exercised in the integration tests
+/// (see `path_getters_return_values` in jsbsim_tests.rs) once a real
+/// JSBSIM_ROOT is available.
 #[test]
-fn path_getters_on_empty_sim() {
+fn path_getters_on_empty_sim_do_not_crash() {
     let sim = Sim::new("");
-    // With empty root, paths may be empty but should not crash.
-    let _ = sim.get_root_dir();
-    let _ = sim.get_aircraft_path();
-    let _ = sim.get_engine_path();
-    let _ = sim.get_systems_path();
+    // Each getter must return a UTF-8 String.  Re-reading the same value
+    // proves the result wasn't a dangling pointer the first time.
+    let r1 = sim.get_root_dir();
+    let r2 = sim.get_root_dir();
+    assert_eq!(r1, r2, "get_root_dir should be deterministic");
+    let _: String = sim.get_aircraft_path();
+    let _: String = sim.get_engine_path();
+    let _: String = sim.get_systems_path();
+    let _: String = sim.get_output_path();
+    let _: String = sim.get_full_aircraft_path();
 }
 
-/// Verify get_output_filename doesn't crash on a bare sim.
+/// On a bare sim with no model loaded the output channel list is empty,
+/// so `get_output_filename(0)` must return an empty string (and must not
+/// crash).
 #[test]
-fn get_output_filename_on_empty_sim() {
+fn get_output_filename_on_empty_sim_returns_empty() {
     let sim = Sim::new("");
     let fname = sim.get_output_filename(0);
-    // Should be empty string, not crash.
-    assert!(fname.is_empty() || !fname.is_empty(), "Should not crash");
+    assert!(
+        fname.is_empty(),
+        "expected empty filename on bare sim, got {fname:?}"
+    );
 }
 
 /// Verify set_terrain_elevation doesn't crash on a bare sim.
@@ -150,16 +164,22 @@ fn check_incremental_hold_on_empty_sim() {
     // Just verify no crash.
 }
 
-/// Verify set_output_filename / get_output_filename round-trip on empty sim.
+/// On a bare sim there are no output channels, so `set_output_filename`
+/// must return `false` (it can't set a non-existent channel) and the
+/// matching getter must still report an empty string.
 #[test]
-fn set_and_get_output_filename_on_empty_sim() {
+fn set_output_filename_on_empty_sim_fails() {
     let mut sim = Sim::new("");
-    // set_output_filename may return false on empty sim (no output channels),
-    // but it should not crash.
-    let _ = sim.set_output_filename(0, "test_output.csv");
+    let ok = sim.set_output_filename(0, "test_output.csv");
+    assert!(
+        !ok,
+        "set_output_filename(0, …) should return false on a bare sim with no channels"
+    );
     let fname = sim.get_output_filename(0);
-    // Value depends on whether the channel exists; just verify no crash.
-    let _ = fname;
+    assert!(
+        fname.is_empty(),
+        "get_output_filename(0) should still be empty after a failed set, got {fname:?}"
+    );
 }
 
 /// Trim status / mode round-trip on an empty sim.
@@ -257,6 +277,36 @@ fn load_planet_missing_file_returns_false() {
     let mut sim = Sim::new("");
     let ok = sim.load_planet("/nonexistent/planet.xml", false);
     assert!(!ok);
+}
+
+/// `set_root_dir` should not crash on a bare sim.  We can't observe its
+/// effect through `get_root_dir` because JSBSim's `GetRootDir()` returns
+/// the path that was set at construction time + any subsequent updates,
+/// so we just verify the call accepts a fresh path.
+#[test]
+fn set_root_dir_does_not_crash() {
+    let mut sim = Sim::new("");
+    sim.set_root_dir("/tmp/jsbsim_root_test");
+    // Calling it twice with different values must also be safe.
+    sim.set_root_dir("/tmp/jsbsim_root_test_2");
+}
+
+/// 5-arg `load_model_with` should fail gracefully when the paths don't
+/// exist.
+#[test]
+fn load_model_with_missing_paths_returns_false() {
+    let mut sim = Sim::new("");
+    let ok = sim.load_model_with(
+        "/nonexistent/aircraft",
+        "/nonexistent/engine",
+        "/nonexistent/systems",
+        "c172x",
+        true,
+    );
+    assert!(
+        !ok,
+        "load_model_with should return false when none of the paths exist"
+    );
 }
 
 /// Property-catalog accessors on a bare sim should return empty without

@@ -59,6 +59,25 @@ bool jsbsim_load_model(JSBSim_FGFDMExec* fdm, const char* model) {
     }
 }
 
+bool jsbsim_load_model_ex(JSBSim_FGFDMExec* fdm,
+                          const char* aircraft_path,
+                          const char* engine_path,
+                          const char* systems_path,
+                          const char* model,
+                          bool add_model_to_path) {
+    if (!fdm || !aircraft_path || !engine_path || !systems_path || !model || !*model) {
+        return false;
+    }
+    try {
+        SGPath ap = SGPath(std::string(aircraft_path));
+        SGPath ep = SGPath(std::string(engine_path));
+        SGPath sp = SGPath(std::string(systems_path));
+        return as_exec(fdm)->LoadModel(ap, ep, sp, std::string(model), add_model_to_path);
+    } catch (...) {
+        return false;
+    }
+}
+
 bool jsbsim_load_script(JSBSim_FGFDMExec* fdm, const char* filename) {
     if (!fdm || !filename || !*filename) return false;
     try {
@@ -467,6 +486,11 @@ bool jsbsim_set_systems_path(JSBSim_FGFDMExec* fdm, const char* path) {
 bool jsbsim_set_output_path(JSBSim_FGFDMExec* fdm, const char* path) {
     if (!fdm || !path) return false;
     return as_exec(fdm)->SetOutputPath(SGPath(std::string(path)));
+}
+
+void jsbsim_set_root_dir(JSBSim_FGFDMExec* fdm, const char* path) {
+    if (!fdm || !path) return;
+    as_exec(fdm)->SetRootDir(SGPath(std::string(path)));
 }
 
 /* ── Integration state query ──────────────────────────────────────── */

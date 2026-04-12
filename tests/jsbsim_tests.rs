@@ -417,14 +417,15 @@ fn suspend_and_resume_integration() {
 
 // ===========================================================================
 // EnableIncrementThenHold  (from tests/TestSuspend.py)
-//
-// Note: enable_increment_then_hold() and check_incremental_hold() are
-// exposed but JSBSim's internal Run() loop may not call CheckIncrementalHold
-// in all configurations.  We verify the API is callable without crashing.
 // ===========================================================================
 
+/// `enable_increment_then_hold(N)` schedules `N` more steps and then drops
+/// the sim into hold — but the caller has to invoke `check_incremental_hold()`
+/// after each step (JSBSim's `Run()` does not call it automatically).
+/// This test follows the same pattern as JSBSim's Python tests:
+/// drive the counter manually and verify the hold actually fires.
 #[test]
-fn increment_then_hold_does_not_crash() {
+fn increment_then_hold_actually_holds() {
     let mut sim = create_fdm();
     assert!(sim.load_model("ball"));
     sim.set_property("ic/h-sl-ft", 10_000.0);
@@ -432,11 +433,44 @@ fn increment_then_hold_does_not_crash() {
     sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
 
-    sim.enable_increment_then_hold(5);
-    for _ in 0..20 {
+    assert!(
+        !sim.holding(),
+        "should not be holding before enable_increment_then_hold"
+    );
+
+    let n = 5;
+    sim.enable_increment_then_hold(n);
+
+    // Drive the increment counter manually (matches JSBSim Python idiom).
+    // After `n` steps the sim must be in hold.
+    for _ in 0..(n + 2) {
+        sim.run();
+        sim.check_incremental_hold();
+    }
+    assert!(
+        sim.holding(),
+        "sim should be holding after {n} run+check_incremental_hold cycles"
+    );
+
+    // Further `run()` calls must not advance time while held.
+    let t_held = sim.get_sim_time();
+    for _ in 0..10 {
         sim.run();
     }
-    // Just verify the API is callable; the hold behavior is tested via hold()/resume().
+    let t_after = sim.get_sim_time();
+    assert!(
+        (t_after - t_held).abs() < 1e-9,
+        "time must not advance while held: t_held={t_held}, t_after={t_after}"
+    );
+
+    // Resume and verify time advances again.
+    sim.resume();
+    assert!(!sim.holding(), "resume() should clear the hold flag");
+    sim.run();
+    assert!(
+        sim.get_sim_time() > t_after,
+        "time should advance again after resume()"
+    );
 }
 
 // ===========================================================================
@@ -1553,6 +1587,48 @@ fn fdm_count_after_load() {
 }
 
 // ===========================================================================
+// SetRootDir and 5-arg LoadModel
+// ===========================================================================
+
+#[test]
+fn set_root_dir_changes_root() {
+    let root = jsbsim_root();
+    let mut sim = Sim::new("/nonexistent/initial");
+    // Pointing the root at a real tree afterward should let LoadModel
+    // succeed.  Note: SetRootDir doesn't update the aircraft / engine /
+    // systems sub-paths, so we set those too via load_model_with below.
+    sim.set_root_dir(&root);
+    assert!(
+        sim.get_root_dir().contains(&root),
+        "get_root_dir should reflect the path we just set, got {:?}",
+        sim.get_root_dir()
+    );
+}
+
+#[test]
+fn load_model_with_paths_succeeds() {
+    let root = jsbsim_root();
+    let mut sim = Sim::new(&root);
+    // Equivalent to set_aircraft_path / set_engine_path / set_systems_path
+    // followed by load_model("c172x") — but routed through JSBSim's
+    // 5-arg LoadModel overload.
+    let ok = sim.load_model_with(
+        &format!("{root}/aircraft"),
+        &format!("{root}/engine"),
+        &format!("{root}/systems"),
+        "c172x",
+        true,
+    );
+    assert!(ok, "load_model_with should successfully load c172x");
+    assert_eq!(sim.get_model_name(), "c172x");
+    let aircraft_path = sim.get_aircraft_path();
+    assert!(
+        aircraft_path.contains("aircraft"),
+        "aircraft path should be set after load_model_with, got {aircraft_path:?}"
+    );
+}
+
+// ===========================================================================
 // Propulsion helpers
 // ===========================================================================
 
@@ -1588,18 +1664,30 @@ fn init_running_all_starts_c172x_engine() {
     sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
 
-    // Before InitRunning, the engine should be in a cold state.
-    let running_before = sim.get_property("propulsion/engine/set-running");
+    // Cold start: engine should not be marked running yet.
+    let running_before = sim.get_property("propulsion/engine[0]/set-running");
+    assert!(
+        running_before < 0.5,
+        "engine should be cold before InitRunning, got set-running={running_before}"
+    );
 
     assert!(
         sim.init_running(-1),
         "init_running(-1) should succeed after LoadModel + RunIC"
     );
 
-    let running_after = sim.get_property("propulsion/engine/set-running");
+    // After InitRunning(-1), every engine must be flagged as running and
+    // the propeller must spin up to a non-trivial RPM (the C172P sits
+    // around 600 RPM at idle, well above 0).
+    let running_after = sim.get_property("propulsion/engine[0]/set-running");
     assert!(
-        running_after >= 1.0 || running_before != running_after,
-        "InitRunning should mark engine as running (before={running_before}, after={running_after})"
+        running_after >= 0.5,
+        "engine should be marked running after InitRunning, got set-running={running_after}"
+    );
+    let rpm = sim.get_property("propulsion/engine[0]/engine-rpm");
+    assert!(
+        rpm > 100.0,
+        "engine RPM should be > 100 after InitRunning, got {rpm}"
     );
 }
 
@@ -1624,6 +1712,18 @@ fn propulsion_steady_state_after_init_running() {
     sim.set_property("ic/gamma-deg", 0.0);
     assert!(sim.run_ic());
     assert!(sim.init_running(-1));
-    // GetSteadyState is model-dependent, so just verify no crash.
+
+    // FGPropulsion::GetSteadyState convergence is model + state dependent
+    // (the c172x piston engine doesn't always reach the trim solver's
+    // tolerance from a cold IC).  We only verify the FFI plumbing here:
+    // the call must return without crashing.  The behavioural side of the
+    // post-`init_running` engine state is checked through engine RPM.
     let _ = sim.propulsion_get_steady_state();
+
+    // The engine must be running and spinning above idle dead-band.
+    let rpm = sim.get_property("propulsion/engine[0]/engine-rpm");
+    assert!(
+        rpm > 100.0,
+        "engine RPM after init_running should be > 100, got {rpm}"
+    );
 }

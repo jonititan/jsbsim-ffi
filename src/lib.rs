@@ -46,6 +46,14 @@ extern "C" {
 
     // Loading
     fn jsbsim_load_model(fdm: JSBSim_FGFDMExec, model: *const c_char) -> bool;
+    fn jsbsim_load_model_ex(
+        fdm: JSBSim_FGFDMExec,
+        aircraft_path: *const c_char,
+        engine_path: *const c_char,
+        systems_path: *const c_char,
+        model: *const c_char,
+        add_model_to_path: bool,
+    ) -> bool;
     fn jsbsim_load_script(fdm: JSBSim_FGFDMExec, filename: *const c_char) -> bool;
     fn jsbsim_load_script_ex(
         fdm: JSBSim_FGFDMExec,
@@ -150,6 +158,7 @@ extern "C" {
     fn jsbsim_set_engine_path(fdm: JSBSim_FGFDMExec, path: *const c_char) -> bool;
     fn jsbsim_set_systems_path(fdm: JSBSim_FGFDMExec, path: *const c_char) -> bool;
     fn jsbsim_set_output_path(fdm: JSBSim_FGFDMExec, path: *const c_char) -> bool;
+    fn jsbsim_set_root_dir(fdm: JSBSim_FGFDMExec, path: *const c_char);
 
     // Simulation time setter
     fn jsbsim_set_sim_time(fdm: JSBSim_FGFDMExec, time: f64);
@@ -438,6 +447,41 @@ impl Sim {
     pub fn load_model(&mut self, model: &str) -> bool {
         let c_model = CString::new(model).expect("model name contains null byte");
         unsafe { jsbsim_load_model(self.inner, c_model.as_ptr()) }
+    }
+
+    /// Load an aircraft model and re-target the aircraft / engine / systems
+    /// search paths in a single call.  Equivalent to calling
+    /// [`set_aircraft_path`](Self::set_aircraft_path),
+    /// [`set_engine_path`](Self::set_engine_path), and
+    /// [`set_systems_path`](Self::set_systems_path) followed by
+    /// [`load_model`](Self::load_model), but routed through JSBSim's own
+    /// 5-argument `LoadModel` overload.
+    ///
+    /// **JSBSim C++ origin:**
+    /// [`FGFDMExec::LoadModel(const SGPath& AircraftPath, const SGPath& EnginePath,
+    /// const SGPath& SystemsPath, const string& model, bool addModelToPath)`](https://github.com/JSBSim-Team/jsbsim/blob/master/src/FGFDMExec.h)
+    pub fn load_model_with(
+        &mut self,
+        aircraft_path: &str,
+        engine_path: &str,
+        systems_path: &str,
+        model: &str,
+        add_model_to_path: bool,
+    ) -> bool {
+        let c_ap = CString::new(aircraft_path).expect("aircraft_path contains null byte");
+        let c_ep = CString::new(engine_path).expect("engine_path contains null byte");
+        let c_sp = CString::new(systems_path).expect("systems_path contains null byte");
+        let c_model = CString::new(model).expect("model name contains null byte");
+        unsafe {
+            jsbsim_load_model_ex(
+                self.inner,
+                c_ap.as_ptr(),
+                c_ep.as_ptr(),
+                c_sp.as_ptr(),
+                c_model.as_ptr(),
+                add_model_to_path,
+            )
+        }
     }
 
     /// Load a JSBSim script XML file.
@@ -1047,6 +1091,19 @@ impl Sim {
     pub fn set_output_path(&mut self, path: &str) -> bool {
         let c_path = CString::new(path).expect("path contains null byte");
         unsafe { jsbsim_set_output_path(self.inner, c_path.as_ptr()) }
+    }
+
+    /// Set the root directory used to resolve relative paths.
+    ///
+    /// **Note:** SetRootDir does NOT update the aircraft / engine / systems
+    /// / output paths.  If you need them re-rooted as well, call the
+    /// corresponding setters separately.
+    ///
+    /// **JSBSim C++ origin:**
+    /// [`FGFDMExec::SetRootDir(const SGPath& rootDir)`](https://github.com/JSBSim-Team/jsbsim/blob/master/src/FGFDMExec.h)
+    pub fn set_root_dir(&mut self, path: &str) {
+        let c_path = CString::new(path).expect("path contains null byte");
+        unsafe { jsbsim_set_root_dir(self.inner, c_path.as_ptr()) }
     }
 
     /// Get the root directory path.
