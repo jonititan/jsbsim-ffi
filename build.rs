@@ -14,11 +14,18 @@ fn main() {
     // user having to set LD_LIBRARY_PATH.
     let use_static = std::env::var("JSBSIM_STATIC").is_ok();
 
-    // Discover JSBSim via pkg-config.
-    // probe() automatically emits the necessary cargo:rustc-link-lib and
-    // cargo:rustc-link-search directives.
+    println!("cargo:rerun-if-env-changed=PKG_CONFIG_PATH");
+    println!("cargo:rerun-if-env-changed=PKG_CONFIG_LIBDIR");
+    println!("cargo:rerun-if-env-changed=PKG_CONFIG_SYSROOT_DIR");
+
+    // Discover JSBSim via pkg-config.  We emit the link directives ourselves
+    // (see emit_link_directives) rather than letting probe() do it, because
+    // JSBSim's installed JSBSim.pc is wrong: it lists -lAtmosphere, -lModels,
+    // -lXml, ... which are CMake object libraries already bundled into
+    // libJSBSim and never installed, so passing them on makes linking fail.
     let jsbsim = pkg_config::Config::new()
         .statik(use_static)
+        .cargo_metadata(false)
         .probe("JSBSim")
         .expect(
             "JSBSim not found via pkg-config!\n\
@@ -35,6 +42,8 @@ fn main() {
                • Register the shared library with the linker cache:\n\
                    sudo ldconfig\n",
         );
+
+    emit_link_directives(&jsbsim, use_static);
 
     // Compile the C++ wrapper that bridges JSBSim's C++ API to a C ABI.
     let mut build = cc::Build::new();
@@ -63,4 +72,71 @@ fn main() {
             println!("cargo:rustc-link-arg=-Wl,-rpath,{}", path.display());
         }
     }
+}
+
+/// Emit `cargo:rustc-link-search` / `cargo:rustc-link-lib` for the libraries
+/// pkg-config reported, skipping any that do not exist on disk.
+///
+/// JSBSim's JSBSim.pc lists its internal CMake object libraries (Atmosphere,
+/// Models, Xml, ...) as if they were installed.  A library is dropped only if
+/// it is absent from both the pkg-config `-L` paths and the compiler's default
+/// library search dirs; if those dirs cannot be determined, every library is
+/// kept so behaviour falls back to plain pkg-config.
+fn emit_link_directives(lib: &pkg_config::Library, use_static: bool) {
+    for path in &lib.link_paths {
+        println!("cargo:rustc-link-search=native={}", path.display());
+    }
+
+    let system_dirs = compiler_library_dirs();
+    let mut skipped = Vec::new();
+
+    for name in &lib.libs {
+        let in_link_paths = |ext: &str| {
+            lib.link_paths
+                .iter()
+                .any(|dir| dir.join(format!("lib{name}.{ext}")).exists())
+        };
+        let exists = ["a", "so", "dylib", "tbd", "lib"].iter().any(|ext| {
+            in_link_paths(ext)
+                || system_dirs
+                    .iter()
+                    .any(|dir| dir.join(format!("lib{name}.{ext}")).exists())
+        });
+
+        if !exists && !system_dirs.is_empty() {
+            skipped.push(format!("-l{name}"));
+            continue;
+        }
+
+        if use_static && in_link_paths("a") {
+            println!("cargo:rustc-link-lib=static={name}");
+        } else {
+            println!("cargo:rustc-link-lib={name}");
+        }
+    }
+
+    if !skipped.is_empty() {
+        println!(
+            "cargo:warning=ignoring libraries listed in JSBSim.pc that are not installed \
+             (bundled into libJSBSim): {}",
+            skipped.join(" ")
+        );
+    }
+}
+
+/// The C/C++ compiler's default library search directories, as reported by
+/// `-print-search-dirs` (GCC and Clang).  Empty if unavailable, e.g. on MSVC.
+fn compiler_library_dirs() -> Vec<std::path::PathBuf> {
+    let Ok(compiler) = cc::Build::new().cpp(true).try_get_compiler() else {
+        return Vec::new();
+    };
+    let Ok(output) = compiler.to_command().arg("-print-search-dirs").output() else {
+        return Vec::new();
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("libraries: ="))
+        .map(|dirs| std::env::split_paths(dirs).filter(|d| d.is_dir()).collect())
+        .unwrap_or_default()
 }
